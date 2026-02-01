@@ -184,7 +184,18 @@ async def telegram_webhook(request: Request):
         text = message.get("text", "")
 
         if text.startswith("/start"):
-            send_telegram_msg(chat_id, "<b>Welcome to Akwam-DL Bot!</b>\n\nSend me a query to search on Akwam, or use /egy [query] for EgyDead.")
+            welcome_text = (
+                "<b>🎬 Welcome to Akwam-DL!</b>\n\n"
+                "I can help you find download links from <b>Akwam</b> and <b>EgyDead</b>.\n\n"
+                "<i>Please choose a search source below:</i>"
+            )
+            markup = {
+                "inline_keyboard": [
+                    [{"text": "🎥 Akwam Movies", "callback_data": "menu|akwam|movie"}, {"text": "📺 Akwam Series", "callback_data": "menu|akwam|series"}],
+                    [{"text": "💀 EgyDead", "callback_data": "menu|egydead|none"}]
+                ]
+            }
+            send_telegram_msg(chat_id, welcome_text, markup)
         
         elif text.startswith("/egy"):
             query = text.replace("/egy", "").strip()
@@ -222,7 +233,15 @@ async def telegram_webhook(request: Request):
         chat_id = cb["message"]["chat"]["id"]
         cb_data = cb["data"]
 
-        if cb_data.startswith("akdetails|"):
+        if cb_data.startswith("menu|"):
+            _, source, q_type = cb_data.split("|")
+            if source == "akwam":
+                msg = f"🔍 <b>Akwam ({q_type.title()}) mode active.</b>\n\nSend me the title of the {q_type} you are looking for."
+            else:
+                msg = "🔍 <b>EgyDead mode active.</b>\n\nSend me the title you are looking for."
+            send_telegram_msg(chat_id, msg)
+
+        elif cb_data.startswith("akdetails|"):
             url = cb_data.split("|")[1]
             qualities = akwam_api.get_qualities(url)
             if not qualities:
