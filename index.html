@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Akwam-DL (Ultra Lite)</title>
+    <style>
+        /* Minimal CSS for speed and old hardware compatibility */
+        body {
+            font-family: sans-serif;
+            background: #fff;
+            color: #000;
+            padding: 10px;
+            max-width: 600px;
+            margin: auto;
+        }
+
+        input,
+        select,
+        button {
+            width: 100%;
+            padding: 12px;
+            margin: 5px 0;
+            font-size: 16px;
+        }
+
+        button {
+            background: #eee;
+            border: 1px solid #ccc;
+            cursor: pointer;
+        }
+
+        button:active {
+            background: #ddd;
+        }
+
+        .result-item {
+            border: 1px solid #eee;
+            padding: 10px;
+            margin: 5px 0;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .loading {
+            font-style: italic;
+            color: #666;
+        }
+
+        #log {
+            font-family: monospace;
+            font-size: 12px;
+            background: #f9f9f9;
+            padding: 5px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>Akwam-DL Lite</h2>
+
+    <!-- SEARCH VIEW -->
+    <div id="view-search">
+        <select id="search-type">
+            <option value="movie">Movies</option>
+            <option value="series">Series</option>
+        </select>
+        <input type="text" id="search-query" placeholder="Enter title (e.g. Suits)">
+        <button onclick="doSearch()">SEARCH</button>
+    </div>
+
+    <!-- LOADING INDICATOR -->
+    <div id="status" class="loading hidden">Processing...</div>
+
+    <!-- LIST VIEW -->
+    <div id="view-list" class="hidden">
+        <button onclick="showView('search')">← BACK TO SEARCH</button>
+        <div id="list-content"></div>
+    </div>
+
+    <!-- DETAILS VIEW -->
+    <div id="view-details" class="hidden">
+        <button onclick="goBackToList()">← BACK TO LIST</button>
+        <h4 id="details-title"></h4>
+        <div id="details-content"></div>
+    </div>
+
+    <!-- RESOLVE VIEW -->
+    <div id="view-resolve" class="hidden">
+        <button onclick="showView('details')">← BACK</button>
+        <p>Direct Link:</p>
+        <textarea id="final-url" style="width:100%; height:80px;" readonly></textarea>
+        <a id="download-btn" href="#"
+            style="display:block; text-align:center; padding:15px; background:green; color:#fff; text-decoration:none; margin-top:10px;">DOWNLOAD
+            NOW</a>
+    </div>
+
+    <hr>
+    <div id="log">Ready.</div>
+
+    <script>
+        let currentType = 'movie';
+        let currentResults = [];
+
+        function showView(id) {
+            document.querySelectorAll('div[id^="view-"]').forEach(v => v.classList.add('hidden'));
+            document.getElementById('view-' + id).classList.remove('hidden');
+        }
+
+        function setStatus(msg) {
+            const s = document.getElementById('status');
+            const l = document.getElementById('log');
+            if (msg) {
+                s.classList.remove('hidden');
+                s.innerText = msg;
+                l.innerText = "[LOG] " + msg;
+            } else {
+                s.classList.add('hidden');
+            }
+        }
+
+        async function doSearch() {
+            const q = document.getElementById('search-query').value;
+            const t = document.getElementById('search-type').value;
+            if (!q) return;
+
+            currentType = t;
+            setStatus("Searching...");
+
+            try {
+                const r = await fetch(`/api/akwam?action=search&q=${encodeURIComponent(q)}&type=${t}`);
+                const data = await r.json();
+
+                if (!data || data.length === 0) {
+                    setStatus("No results found.");
+                    return;
+                }
+
+                currentResults = data;
+                const container = document.getElementById('list-content');
+                container.innerHTML = `<h3>Results (${t})</h3>`;
+
+                data.forEach((item, index) => {
+                    const btn = document.createElement('button');
+                    btn.innerText = item.title;
+                    btn.onclick = () => loadItem(item);
+                    container.appendChild(btn);
+                });
+
+                setStatus("");
+                showView('list');
+            } catch (e) {
+                setStatus("Search failed: " + e.message);
+            }
+        }
+
+        async function loadItem(item) {
+            setStatus("Loading " + item.title + "...");
+            document.getElementById('details-title').innerText = item.title;
+            const container = document.getElementById('details-content');
+            container.innerHTML = "";
+
+            try {
+                if (currentType === 'series') {
+                    // Load episodes
+                    const r = await fetch(`/api/akwam?action=episodes&url=${encodeURIComponent(item.url)}`);
+                    const data = await r.json();
+                    data.forEach(ep => {
+                        const btn = document.createElement('button');
+                        btn.innerText = ep.title;
+                        btn.onclick = () => loadQualities(ep.url);
+                        container.appendChild(btn);
+                    });
+                } else {
+                    // Just load qualities for movie
+                    await loadQualities(item.url);
+                    return; // loadQualities handles the view switch
+                }
+                showView('details');
+                setStatus("");
+            } catch (e) {
+                setStatus("Error loading item: " + e.message);
+            }
+        }
+
+        async function loadQualities(url) {
+            setStatus("Fetching qualities...");
+            const container = document.getElementById('details-content');
+            // If it's a movie, we might need to show the details view now
+            showView('details');
+
+            try {
+                const r = await fetch(`/api/akwam?action=details&url=${encodeURIComponent(url)}`);
+                const data = await r.json();
+
+                let html = "<h4>Choose Quality</h4>";
+                for (const q in data) {
+                    html += `<button onclick="resolve('${data[q]}')">📥 DOWNLOAD ${q}</button>`;
+                }
+                container.innerHTML = html;
+                setStatus("");
+            } catch (e) {
+                setStatus("Error fetching qualities.");
+            }
+        }
+
+        async function resolve(url) {
+            setStatus("Resolving direct link...");
+            try {
+                const r = await fetch(`/api/akwam?action=resolve&url=${encodeURIComponent(url)}`);
+                const data = await r.json();
+
+                if (data.direct_url) {
+                    document.getElementById('final-url').value = data.direct_url;
+                    document.getElementById('download-btn').href = data.direct_url;
+                    showView('resolve');
+                    setStatus("");
+                } else {
+                    setStatus("Resolution failed (Site protection?)");
+                }
+            } catch (e) {
+                setStatus("Resolution error.");
+            }
+        }
+
+        function goBackToList() { showView('list'); }
+    </script>
+</body>
+
+</html>
