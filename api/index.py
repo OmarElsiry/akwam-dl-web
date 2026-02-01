@@ -134,13 +134,13 @@ akwam_api = AkwamAPI()
 
 @app.get("/")
 async def root_ui():
-    # Serve index.html from the root directory
-    # In Vercel, the current directory is usually api/ so we go up one level
-    index_path = os.path.join(os.getcwd(), "index.html")
-    if not os.path.exists(index_path):
-        # Fallback if structure is different
-        index_path = os.path.join(os.getcwd(), "..", "index.html")
-    return FileResponse(index_path)
+    # Robust path resolution for Vercel
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    index_path = os.path.join(base_dir, "index.html")
+    
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"error": "UI file (index.html) not found", "path_searched": index_path}
 
 @app.get("/api/akwam")
 async def handle_akwam(action: str, q: Optional[str] = None, type: Optional[str] = "movie", url: Optional[str] = None):
