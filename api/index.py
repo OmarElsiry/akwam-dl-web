@@ -86,26 +86,44 @@ class AkwamAPI:
         return qualities
 
     def resolve_link(self, short_url):
-        # Step 1: Solving shortened URL
+        if not short_url.startswith('http'):
+            short_url = 'https://' + short_url
+        
+        # Step 1: Shortened Link -> Download Page
         resp = requests.get(short_url, headers=HEADERS)
-        match1 = re.search(RGX_SHORTEN_URL, resp.text)
+        match1 = re.search(f'({RGX_SHORTEN_URL})', resp.text)
         if not match1: return None
         
-        target = match1.group(1)
+        target = match1.group(1).rstrip('"')
         if not target.startswith('http'): target = 'https://' + target
         
-        # Step 2: Getting Direct URL page
+        # Step 2: Download Page -> Final Direct Link
         resp = requests.get(target, headers=HEADERS)
-        # Fix non-direct URL as in CLI
         if resp.url != target:
             resp = requests.get(resp.url, headers=HEADERS)
             
-        # Step 3: Extract Final URL
-        match2 = re.search(RGX_DIRECT_URL, resp.text)
+        match2 = re.search(f'({RGX_DIRECT_URL})', resp.text)
         if match2:
-            final_url = match2.group(1)
+            final_url = match2.group(1).rstrip('"')
             return final_url if final_url.startswith('http') else 'https://' + final_url
         return None
+
+    def batch_resolve(self, series_id):
+        # Mirroring CLI's recursive_episodes
+        series_url = f"{self.base_url}/series/{series_id}"
+        episodes = self.fetch_episodes(series_url)
+        results = []
+        
+        # Limit to 15 episodes to prevent Vercel timeout (10s limit)
+        for ep in episodes[:15]:
+            qualities = self.get_qualities(ep['url'])
+            if qualities:
+                # Pick first available quality (usually highest)
+                q_key = list(qualities.keys())[0]
+                direct = self.resolve_link(qualities[q_key])
+                if direct:
+                    results.append({"title": ep['title'], "url": direct})
+        return results
 
 akwam_api = AkwamAPI()
 
@@ -172,17 +190,32 @@ async def webhook(request: Request):
                 return {"ok": True}
             
             btns = []
-            for e in eps:
+            for e in eps[:14]: # Show first 14
                 try:
                     eid = re.search(r'/episode/(\d+)', e['url']).group(1)
                     btns.append([{"text": e['title'], "callback_data": f"de|e|{eid}"}])
                 except: continue
             
-            # Add "Get All" button logic simulator
-            # btns.append([{"text": "📥 Get All Links (Batch)", "callback_data": f"all|{sid}"}])
+            # THE "GET ALL" OPTION
+            btns.append([{"text": "🔥 GET ALL EPISODES 🔥", "callback_data": f"all|{sid}"}])
             
-            send_telegram(cid, "<b>Episodes Found:</b>", {"inline_keyboard": btns[:15]})
+            send_telegram(cid, "<b>Episodes Found:</b>", {"inline_keyboard": btns})
             
+        elif d.startswith("all|"):
+            sid = d.split("|")[1]
+            send_telegram(cid, "⏳ Resolving all episodes (First 15)... This may take a few seconds.")
+            all_links = akwam_api.batch_resolve(sid)
+            
+            if not all_links:
+                send_telegram(cid, "❌ Failed to resolve episodes. Try one by one.")
+            else:
+                text = "📁 <b>Season Download Links:</b>\n\n"
+                for l in all_links:
+                    text += f"• <b>{l['title']}:</b>\n<code>{l['url']}</code>\n\n"
+                
+                # If text too long for one msg, it might need splitting, but for 15 it should fit
+                send_telegram(cid, text)
+
         # Details (Qualities) for Movie or Episode ID
         elif d.startswith("de|"):
             _, otype, oid = d.split("|")
