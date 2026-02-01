@@ -63,6 +63,7 @@ class AkwamAPI:
 akwam = AkwamAPI()
 
 @app.get("/api/akwam")
+@app.get("/")
 async def handle_akwam(
     action: str, 
     q: Optional[str] = None, 
