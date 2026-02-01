@@ -1,6 +1,7 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 import re
 import requests
+import json
 from typing import Optional
 from urllib.parse import quote, unquote
 
@@ -13,6 +14,9 @@ RGX_DIRECT_URL = r'([a-z0-9]{4,}\.\w+\.\w+/download/.*?)"'
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
+
+BOT_TOKEN = "7917912042:AAHhtfKASDY54Q1U1X5650cWublsjtpvTi8"
+TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # --- AKWAM LOGIC ---
 class AkwamAPI:
@@ -148,3 +152,109 @@ async def handle_egydead(
     elif action == 'details':
         return egydead_api.get_links(url)
     return {"error": "Invalid action"}
+
+# --- TELEGRAM BOT LOGIC ---
+
+def send_telegram_msg(chat_id, text, reply_markup=None):
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML"
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    requests.post(f"{TELEGRAM_API}/sendMessage", json=payload)
+
+@app.post("/api/webhook")
+async def telegram_webhook(request: Request):
+    data = await request.json()
+    
+    if "message" in data:
+        message = data["message"]
+        chat_id = message["chat"]["id"]
+        text = message.get("text", "")
+
+        if text.startswith("/start"):
+            send_telegram_msg(chat_id, "<b>Welcome to Akwam-DL Bot!</b>\n\nSend me a query to search on Akwam, or use /egy [query] for EgyDead.")
+        
+        elif text.startswith("/egy"):
+            query = text.replace("/egy", "").strip()
+            if not query:
+                send_telegram_msg(chat_id, "Please provide a search query. Example: /egy Batman")
+                return
+            results = egydead_api.search(query)
+            if not results:
+                send_telegram_msg(chat_id, "No results found on EgyDead.")
+                return
+            
+            buttons = []
+            for res in results[:8]:
+                buttons.append([{"text": res["title"], "callback_data": f"egydetails|{res['url']}"}])
+            
+            send_telegram_msg(chat_id, f"<b>EgyDead Results for:</b> {query}", {"inline_keyboard": buttons})
+
+        else:
+            # Default to Akwam search
+            query = text.strip()
+            if not query: return
+            results = akwam_api.search(query)
+            if not results:
+                send_telegram_msg(chat_id, "No results found on Akwam.")
+                return
+            
+            buttons = []
+            for res in results[:8]:
+                buttons.append([{"text": res["title"], "callback_data": f"akdetails|{res['url']}"}])
+            
+            send_telegram_msg(chat_id, f"<b>Akwam Results for:</b> {query}", {"inline_keyboard": buttons})
+
+    elif "callback_query" in data:
+        cb = data["callback_query"]
+        chat_id = cb["message"]["chat"]["id"]
+        cb_data = cb["data"]
+
+        if cb_data.startswith("akdetails|"):
+            url = cb_data.split("|")[1]
+            qualities = akwam_api.get_qualities(url)
+            if not qualities:
+                send_telegram_msg(chat_id, "No qualities found.")
+                return
+            
+            buttons = []
+            for q, l in qualities.items():
+                buttons.append([{"text": q, "callback_data": f"akresolve|{l}|{q}"}])
+            
+            send_telegram_msg(chat_id, "<b>Choose Quality:</b>", {"inline_keyboard": buttons})
+
+        elif cb_data.startswith("akresolve|"):
+            _, short_url, quality = cb_data.split("|")
+            send_telegram_msg(chat_id, f"🔄 Resolving {quality} link... please wait.")
+            direct_url = akwam_api.resolve_link(short_url)
+            if direct_url:
+                send_telegram_msg(chat_id, f"✅ <b>Direct Link ({quality}):</b>\n\n<code>{direct_url}</code>\n\n<a href='{direct_url}'>🚀 FAST DOWNLOAD</a>")
+            else:
+                send_telegram_msg(chat_id, "❌ Failed to resolve link.")
+
+        elif cb_data.startswith("egydetails|"):
+            url = cb_data.split("|")[1]
+            details = egydead_api.get_links(url)
+            
+            if details["episodes"]:
+                buttons = []
+                for ep in details["episodes"][:10]:
+                    buttons.append([{"text": ep["title"], "callback_data": f"egydetails|{ep['url']}"}])
+                send_telegram_msg(chat_id, "<b>Episodes:</b>", {"inline_keyboard": buttons})
+            
+            if details["links"]:
+                text = "<b>Download Servers:</b>\n"
+                for l in details["links"]:
+                    text += f"• <a href='{l['url']}'>{l['server']}</a> ({l['quality']})\n"
+                send_telegram_msg(chat_id, text)
+
+    return {"status": "ok"}
+
+@app.get("/api/set_webhook")
+async def set_webhook(url: str):
+    webhook_url = f"{url.rstrip('/')}/api/webhook"
+    resp = requests.get(f"{TELEGRAM_API}/setWebhook", params={"url": webhook_url})
+    return resp.json()
