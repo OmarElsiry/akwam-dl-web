@@ -25,8 +25,8 @@ USER_STATES = {}
 class AkwamAPI:
     def __init__(self, base_url="https://ak.sv/"):
         try:
-            # Resolve the actual landing URL (e.g., ak.sv -> akwam.site)
             resp = requests.get(base_url, headers=HEADERS, timeout=5)
+            resp.encoding = 'utf-8'
             self.base_url = resp.url.rstrip('/')
         except:
             self.base_url = base_url.rstrip('/')
@@ -35,28 +35,28 @@ class AkwamAPI:
         query = query.replace(' ', '+')
         url = f"{self.base_url}/search?q={query}&section={_type}&page={page}"
         resp = requests.get(url, headers=HEADERS)
+        resp.encoding = 'utf-8'
         
-        # Pattern exactly as CLI: (self.url/type/id/slug)"
         pattern = rf'({self.base_url}/{_type}/\d+/.*?)"'
         matches = re.findall(pattern, resp.text)
         
         results = []
         seen = set()
-        # Matches[::-1] as in CLI to put newest/best first
         for link in matches[::-1]:
             if link not in seen:
                 seen.add(link)
-                title = link.split('/')[-1].replace('-', ' ').title()
-                results.append({'title': unquote(title), 'url': link})
+                # Unquote FIRST, then format
+                slug = link.split('/')[-1]
+                title = unquote(slug).replace('-', ' ').title()
+                results.append({'title': title, 'url': link})
         return results
 
     def fetch_episodes(self, series_url):
         resp = requests.get(series_url, headers=HEADERS)
-        # Some URLs might be relative, handle both
+        resp.encoding = 'utf-8'
         pattern = rf'({self.base_url}/episode/\d+/.*?)"'
         matches = re.findall(pattern, resp.text)
         
-        # If no absolute matches, try relative
         if not matches:
             matches = re.findall(r'href="(/episode/\d+/.*?)"', resp.text)
             matches = [f"{self.base_url}{m}" for m in matches]
@@ -66,12 +66,15 @@ class AkwamAPI:
         for url in matches[::-1]:
             if url not in seen:
                 seen.add(url)
-                title = url.split('/')[-1].replace('-', ' ').title()
-                episodes.append({'title': unquote(title), 'url': url})
+                # Unquote FIRST, then format
+                slug = url.split('/')[-1]
+                title = unquote(slug).replace('-', ' ').title()
+                episodes.append({'title': title, 'url': url})
         return episodes
 
     def get_qualities(self, url):
         resp = requests.get(url, headers=HEADERS)
+        resp.encoding = 'utf-8'
         page_content = resp.text.replace('\n', '')
         
         # Search for link/... identifiers inside quality blocks
