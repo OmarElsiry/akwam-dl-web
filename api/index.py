@@ -46,15 +46,19 @@ class AkwamAPI:
 
     def fetch_episodes(self, series_url):
         resp = requests.get(series_url, headers=HEADERS)
-        pattern = rf'({self.base_url}/episode/\d+/.*?)"'
+        # Support both absolute and relative episode links
+        pattern = r'href="((?:https?://ak\.sv)?/episode/\d+/.*?)"'
         matches = re.findall(pattern, resp.text)
         episodes = []
         seen = set()
         for url in matches[::-1]:
-            if url not in seen:
-                seen.add(url)
-                title = url.split('/')[-1].replace('-', ' ').title()
-                episodes.append({'title': title, 'url': url})
+            full_url = url if url.startswith('http') else f"{self.base_url}{url}"
+            if full_url not in seen:
+                seen.add(full_url)
+                title = full_url.split('/')[-1].replace('-', ' ').title()
+                # Extra clean for Arabic if needed
+                title = unquote(title).replace('╪º┘ä╪\xad┘\x84┘\x82╪⌐', 'الحلقة')
+                episodes.append({'title': title, 'url': full_url})
         return episodes
 
     def get_qualities(self, url):
@@ -130,7 +134,21 @@ async def webhook(request: Request):
             else:
                 btns = []
                 for x in res[:10]:
-                    cb = f"ep|{x['url']}" if qtype == 'series' else f"det|{x['url']}"
+                    # Extract ID to store in callback_data (to avoid 64-char limit)
+                    # URL format: https://ak.sv/movie/123/slug
+                    parts = x['url'].split('/')
+                    # parts might be ['', 'movie', '123', 'slug'] or ['https:', '', 'ak.sv', 'movie', '123', 'slug']
+                    obj_id = parts[-2] if parts[-1] else parts[-1] # Simple extraction
+                    try:
+                        obj_id = re.search(r'/(\d+)', x['url']).group(1)
+                    except:
+                        obj_id = parts[-2]
+
+                    if qtype == 'series':
+                        cb = f"ep|{obj_id}"
+                    else:
+                        cb = f"de|m|{obj_id}" # Details -> Movie -> ID
+                    
                     btns.append([{"text": x['title'], "callback_data": cb}])
                 send_telegram(cid, f"<b>Results ({qtype}):</b>", {"inline_keyboard": btns})
     elif "callback_query" in data:
@@ -138,14 +156,25 @@ async def webhook(request: Request):
         if d.startswith("m|"):
             USER_STATES[cid] = d.split("|")[1]
             send_telegram(cid, f"✅ Mode: {USER_STATES[cid].title()}")
+        
         elif d.startswith("ep|"):
-            eps = akwam_api.fetch_episodes(d.split("|")[1])
-            btns = [[{"text": e['title'], "callback_data": f"det|{e['url']}"}] for e in eps[:15]]
+            sid = d.split("|")[1]
+            eps = akwam_api.fetch_episodes(f"{akwam_api.base_url}/series/{sid}")
+            btns = []
+            for e in eps[:15]:
+                try: eid = re.search(r'/episode/(\d+)', e['url']).group(1)
+                except: eid = e['url'].split('/')[-2]
+                btns.append([{"text": e['title'], "callback_data": f"de|e|{eid}"}]) # Details -> Episode -> ID
             send_telegram(cid, "<b>Episodes:</b>", {"inline_keyboard": btns})
-        elif d.startswith("det|"):
-            qs = akwam_api.get_qualities(d.split("|")[1])
+            
+        elif d.startswith("de|"):
+            # Format: de|type|id (de|m|123 or de|e|123)
+            _, otype, oid = d.split("|")
+            path = "movie" if otype == 'm' else "episode"
+            qs = akwam_api.get_qualities(f"{akwam_api.base_url}/{path}/{oid}")
             btns = [[{"text": f"📥 {k}", "callback_data": f"res|{v}|{k}"}] for k, v in qs.items()]
             send_telegram(cid, "<b>Select Quality:</b>", {"inline_keyboard": btns})
+            
         elif d.startswith("res|"):
             _, url, q = d.split("|")
             send_telegram(cid, f"⏳ Resolving {q}...")

@@ -1,0 +1,8 @@
+﻿Fetching Series Page: https://ak.sv/series/596/suits-%D8%A7%D9%84%D9%85%D9%88%D8%B3%D9%85-%D8%A7%D9%84%D8%AA%D8%A7%D8%B3%D8%B9
+Status: 200
+Pattern `href="(https?://ak\.sv/episode/\d+/.*?)"` found 20 matches.
+First 3 matches: ['https://ak.sv/episode/9242/suits-╪º┘\x84┘\x85┘\x88╪│┘\x85-╪º┘\x84╪¬╪º╪│╪╣/╪º┘\x84╪\xad┘\x84┘\x82╪⌐-10', 'https://ak.sv/episode/9242/suits-╪º┘\x84┘\x85┘\x88╪│┘\x85-╪º┘\x84╪¬╪º╪│╪╣/╪º┘\x84╪\xad┘\x84┘\x82╪⌐-10', 'https://ak.sv/episode/9241/suits-╪º┘\x84┘\x85┘\x88╪│┘\x85-╪º┘\x84╪¬╪º╪│╪╣/╪º┘\x84╪\xad┘\x84┘\x82╪⌐-9']
+Pattern `href="(/episode/\d+/.*?)"` found 0 matches.
+Pattern `class="episode-item".*?href="(.*?)"` found 0 matches.
+Pattern `\/episode\/\d+\/.*?"` found 20 matches.
+First 3 matches: ['/episode/9242/suits-╪º┘\x84┘\x85┘\x88╪│┘\x85-╪º┘\x84╪¬╪º╪│╪╣/╪º┘\x84╪\xad┘\x84┘\x82╪⌐-10"', '/episode/9242/suits-╪º┘\x84┘\x85┘\x88╪│┘\x85-╪º┘\x84╪¬╪º╪│╪╣/╪º┘\x84╪\xad┘\x84┘\x82╪⌐-10"', '/episode/9241/suits-╪º┘\x84┘\x85┘\x88╪│┘\x85-╪º┘\x84╪¬╪º╪│╪╣/╪º┘\x84╪\xad┘\x84┘\x82╪⌐-9"']

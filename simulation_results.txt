@@ -1,0 +1,58 @@
+﻿
+[BOT] Simulation Started: /start
+[BOT] Mode Selection Menu: [≡ƒÄÑ Movies] [≡ƒô║ Series]
+
+========================================
+--- SIMULATING MOVIE FLOW ---
+
+[USER] Clicks: Movie button
+[BOT] Mode Set: Movie! Now send me a title.
+
+[USER] Sends text: "Batman"
+[BOT] Results for "Batman":
+  [1] Aztec Batman Clash Of Empires
+  [2] Merry Little Batman ┘à╪»╪¿┘ä╪¼ 1
+  [3] Merry Little Batman ┘à╪¬╪▒╪¼┘à 1
+  [4] Batman The Doom That Came To Gotham 3
+  [5] Batman And Superman Battle Of The Super Sons
+
+[USER] Selects Item/Episode: aztec-batman-clash-of-empires
+[BOT] Available Qualities:
+  [≡ƒôÑ 1080p]
+  [≡ƒôÑ 720p]
+
+[USER] Selects Quality: 1080p
+[BOT] ΓÅ│ Resolving 1080p link... please wait.
+[BOT] Γ£à Direct Link Resolved!
+[BOT] URL: https://s302d3.downet.net/download/1770004125/697ecd1d19123/Aztec.Batman.Clash.Of.Empires.2025.1080p.WEB-DL.AKWAM.mp4
+
+========================================
+--- SIMULATING SERIES FLOW ---
+
+[USER] Clicks: Series button
+[BOT] Mode Set: Series! Now send me a title.
+
+[USER] Sends text: "Suits"
+[BOT] Results for "Suits":
+  [1] Suits ╪º┘ä┘à┘ê╪│┘à ╪º┘ä╪¬╪º╪│╪╣
+  [2] Suits ╪º┘ä┘à┘ê╪│┘à ╪º┘ä╪½╪º┘à┘å
+  [3] Suits ╪º┘ä┘à┘ê╪│┘à ╪º┘ä╪│╪º╪¿╪╣
+  [4] Suits ╪º┘ä┘à┘ê╪│┘à ╪º┘ä╪│╪º╪»╪│
+  [5] Suits ╪º┘ä┘à┘ê╪│┘à ╪º┘ä╪«╪º┘à╪│
+
+[USER] Selects Series: suits-╪º┘ä┘à┘ê╪│┘à-╪º┘ä╪¬╪º╪│╪╣
+[BOT] Episodes for this series:
+  [1] ├ÿ┬º├Ö┬ä├ÿ┬¡├Ö┬ä├Ö┬é├ÿ┬⌐ 1
+  [2] ├ÿ┬º├Ö┬ä├ÿ┬¡├Ö┬ä├Ö┬é├ÿ┬⌐ 2
+  [3] ├ÿ┬º├Ö┬ä├ÿ┬¡├Ö┬ä├Ö┬é├ÿ┬⌐ 3
+  [4] ├ÿ┬º├Ö┬ä├ÿ┬¡├Ö┬ä├Ö┬é├ÿ┬⌐ 4
+  [5] ├ÿ┬º├Ö┬ä├ÿ┬¡├Ö┬ä├Ö┬é├ÿ┬⌐ 5
+
+[USER] Selects Item/Episode: ├ÿ┬º├Ö┬ä├ÿ┬¡├Ö┬ä├Ö┬é├ÿ┬⌐-1
+[BOT] Available Qualities:
+  [≡ƒôÑ 720p]
+
+[USER] Selects Quality: 720p
+[BOT] ΓÅ│ Resolving 720p link... please wait.
+[BOT] Γ£à Direct Link Resolved!
+[BOT] URL: https://s302d3.downet.net/download/1770004130/697ecd226b8b3/Suits.S09E01.720p.BluRay.AKWAM.mp4
