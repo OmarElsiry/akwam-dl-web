@@ -1,7 +1,9 @@
 from fastapi import FastAPI, Query, Request
+from fastapi.responses import FileResponse
 import re
 import requests
 import json
+import os
 from typing import Optional
 from urllib.parse import quote, unquote
 
@@ -131,8 +133,14 @@ class AkwamAPI:
 akwam_api = AkwamAPI()
 
 @app.get("/")
-async def root_status():
-    return {"status": "online", "message": "Akwam-DL v2.1 (Pure CLI Logic) Live"}
+async def root_ui():
+    # Serve index.html from the root directory
+    # In Vercel, the current directory is usually api/ so we go up one level
+    index_path = os.path.join(os.getcwd(), "index.html")
+    if not os.path.exists(index_path):
+        # Fallback if structure is different
+        index_path = os.path.join(os.getcwd(), "..", "index.html")
+    return FileResponse(index_path)
 
 @app.get("/api/akwam")
 async def handle_akwam(action: str, q: Optional[str] = None, type: Optional[str] = "movie", url: Optional[str] = None):
