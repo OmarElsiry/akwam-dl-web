@@ -1,0 +1,39 @@
+# EgyDead Download Methods
+
+## 1. Server: تحميل متعدد (hglink.to)
+**Method:**
+1.  Navigate to the URL.
+2.  Click the "Download" button (often blue or green).
+3.  **Note:** This server is a "multi-host" redirector. It will usually redirect you to another file host (like DoodStream, Mixdrop, or Gofile). You will then need to follow the method for that specific host.
+
+## 2. Server: EarnVids (dintezuvio.com)
+**Method:**
+1.  Navigate to the URL.
+2.  Click the "Free Download" button (usually grey or blue).
+3.  Wait for the countdown timer (often 30 seconds).
+4.  Click "Create Download Link".
+5.  Click "Click here to download" to start the file transfer.
+
+## 3. Server: Mirrorace (mirrorace.org)
+**Method:**
+1.  Navigate to the URL.
+2.  **Challenge:** This site is often protected by Cloudflare ("Verifying you are human"). You may need to solve a CAPTCHA.
+3.  Once passed, you will see a list of mirrors (e.g., 1fichier, DoodStream).
+4.  Click on a mirror link to be redirected to that host.
+5.  Follow the method for the chosen host.
+
+## 4. Server: DoodStream (dsvplay.com / doodstream.com)
+**Method:**
+1.  Navigate to the URL.
+2.  Click the "Download Now" button (Blue button).
+    *   *Note:* This often opens a pop-up ad. Close the pop-up and click again if necessary.
+3.  Wait for the "High quality" (or sometimes "Original") link to appear.
+4.  Click the "High quality" link.
+5.  On the next page, click the "Download file" link to start the download.
+
+## 5. Server: 1fichier (1fichier.com)
+**Method:**
+1.  Navigate to the URL.
+2.  Click the "Download" button (Orange/Red button).
+3.  Wait for the countdown timer (if you are a free user).
+4.  Click the "Click here to download the file" link to start the download.
