@@ -7,6 +7,15 @@ from urllib.parse import quote, unquote
 
 app = FastAPI()
 
+@app.get("/")
+async def root_status():
+    return {
+        "status": "online",
+        "message": "Akwam-DL API is running!",
+        "telegram_bot": "enabled",
+        "web_ui": "ready"
+    }
+
 # --- CONSTANTS ---
 RGX_DL_URL = r'https?://(\w*\.*\w+\.\w+/link/\d+)'
 RGX_SHORTEN_URL = r'https?://(\w*\.*\w+\.\w+/download/.*?)"'
