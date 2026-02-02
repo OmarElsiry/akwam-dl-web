@@ -45,10 +45,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderResults = (results) => {
         if (!results || results.length === 0) {
             resultsContainer.innerHTML = `
-                <div style="grid-column:1/-1; text-align:center; padding:100px; color:var(--text-muted)">
-                    <p style="font-size:1.2rem; margin-bottom:10px">No results found</p>
-                    <p style="font-size:0.9rem; opacity:0.6">Try a different keyword</p>
-                </div>`;
+            <div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 50px;">
+                <p>Ready to search.</p>
+                <small style="opacity:0.5">Enter a movie or series name</small>
+            </div>`;
             return;
         }
 

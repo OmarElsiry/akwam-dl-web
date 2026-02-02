@@ -141,10 +141,13 @@ header {
     width: 100%;
     background: transparent;
     border: none;
-    padding: 20px 30px;
+    padding: 20px 70px 20px 30px;
+    /* Added right padding for button */
     font-size: 1.2rem;
     color: #fff;
     font-family: 'Outfit', sans-serif;
+    position: relative;
+    z-index: 1;
 }
 
 #search-input:focus {
@@ -166,6 +169,13 @@ header {
     transition: var(--transition);
     display: grid;
     place-items: center;
+    z-index: 10;
+    /* Ensure button is on top */
+}
+
+#search-btn svg {
+    pointer-events: none;
+    /* Let clicks pass through to button */
 }
 
 #search-btn:hover {
