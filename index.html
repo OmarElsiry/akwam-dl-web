@@ -22,21 +22,16 @@
 
         <div class="search-wrapper">
             <div class="controls">
-                <button class="toggle-btn active" data-source="akwam">Akwam</button>
-                <button class="toggle-btn" data-source="egydead">EgyDead</button>
-
-                <div style="width: 20px;"></div> <!-- Spacer -->
-
-                <label class="toggle-btn active" style="cursor: pointer;">
-                    <input type="radio" name="search-type" value="movie" checked style="display:none"
-                        onchange="this.parentElement.classList.add('active'); this.parentElement.nextElementSibling.classList.remove('active')">
-                    Movies
-                </label>
-                <label class="toggle-btn" style="cursor: pointer;">
-                    <input type="radio" name="search-type" value="series" style="display:none"
-                        onchange="this.parentElement.classList.add('active'); this.parentElement.previousElementSibling.classList.remove('active')">
-                    Series
-                </label>
+                <div class="segmented-control">
+                    <label class="segment-btn">
+                        <input type="radio" name="search-type" value="movie" checked>
+                        <span>Movies</span>
+                    </label>
+                    <label class="segment-btn">
+                        <input type="radio" name="search-type" value="series">
+                        <span>Series</span>
+                    </label>
+                </div>
             </div>
 
             <div class="search-container">
