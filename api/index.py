@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 import re
 import requests
 import json
@@ -8,6 +9,14 @@ from typing import Optional
 from urllib.parse import quote, unquote
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- CONSTANTS (Directly from v2.0 CLI) ---
 RGX_DL_URL = r'https?://\w*\.*\w+\.\w+/link/\d+'
