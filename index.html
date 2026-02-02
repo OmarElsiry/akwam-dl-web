@@ -4,231 +4,72 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Akwam-DL (Ultra Lite)</title>
-    <style>
-        /* Minimal CSS for speed and old hardware compatibility */
-        body {
-            font-family: sans-serif;
-            background: #fff;
-            color: #000;
-            padding: 10px;
-            max-width: 600px;
-            margin: auto;
-        }
-
-        input,
-        select,
-        button {
-            width: 100%;
-            padding: 12px;
-            margin: 5px 0;
-            font-size: 16px;
-        }
-
-        button {
-            background: #eee;
-            border: 1px solid #ccc;
-            cursor: pointer;
-        }
-
-        button:active {
-            background: #ddd;
-        }
-
-        .result-item {
-            border: 1px solid #eee;
-            padding: 10px;
-            margin: 5px 0;
-        }
-
-        .hidden {
-            display: none;
-        }
-
-        .loading {
-            font-style: italic;
-            color: #666;
-        }
-
-        #log {
-            font-family: monospace;
-            font-size: 12px;
-            background: #f9f9f9;
-            padding: 5px;
-        }
-    </style>
+    <title>Akwam Professional</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
 </head>
 
 <body>
 
-    <h2>Akwam-DL Lite</h2>
+    <div class="container">
+        <header>
+            <h1 class="logo">Akwam<span>Pro</span></h1>
+            <p class="subtitle">Premium Downloader Interface</p>
+        </header>
 
-    <!-- SEARCH VIEW -->
-    <div id="view-search">
-        <select id="search-type">
-            <option value="movie">Movies</option>
-            <option value="series">Series</option>
-        </select>
-        <input type="text" id="search-query" placeholder="Enter title (e.g. Suits)">
-        <button onclick="doSearch()">SEARCH</button>
+        <div class="search-wrapper">
+            <div class="controls">
+                <button class="toggle-btn active" data-source="akwam">Akwam</button>
+                <button class="toggle-btn" data-source="egydead">EgyDead</button>
+
+                <div style="width: 20px;"></div> <!-- Spacer -->
+
+                <label class="toggle-btn active" style="cursor: pointer;">
+                    <input type="radio" name="search-type" value="movie" checked style="display:none"
+                        onchange="this.parentElement.classList.add('active'); this.parentElement.nextElementSibling.classList.remove('active')">
+                    Movies
+                </label>
+                <label class="toggle-btn" style="cursor: pointer;">
+                    <input type="radio" name="search-type" value="series" style="display:none"
+                        onchange="this.parentElement.classList.add('active'); this.parentElement.previousElementSibling.classList.remove('active')">
+                    Series
+                </label>
+            </div>
+
+            <div class="search-container">
+                <input type="text" id="search-input" placeholder="Search for movies or series...">
+                <button id="search-btn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <div id="results-container" class="results-grid">
+            <!-- Results will appear here -->
+            <div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 50px;">
+                Start by searching for a title above.
+            </div>
+        </div>
     </div>
 
-    <!-- LOADING INDICATOR -->
-    <div id="status" class="loading hidden">Processing...</div>
-
-    <!-- LIST VIEW -->
-    <div id="view-list" class="hidden">
-        <button onclick="showView('search')">← BACK TO SEARCH</button>
-        <div id="list-content"></div>
+    <!-- Modal -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <div class="close-modal">&times;</div>
+            <div id="modal-body">
+                <!-- Modal Content -->
+            </div>
+        </div>
     </div>
 
-    <!-- DETAILS VIEW -->
-    <div id="view-details" class="hidden">
-        <button onclick="goBackToList()">← BACK TO LIST</button>
-        <h4 id="details-title"></h4>
-        <div id="details-content"></div>
-    </div>
-
-    <!-- RESOLVE VIEW -->
-    <div id="view-resolve" class="hidden">
-        <button onclick="showView('details')">← BACK</button>
-        <p>Direct Link:</p>
-        <textarea id="final-url" style="width:100%; height:80px;" readonly></textarea>
-        <a id="download-btn" href="#"
-            style="display:block; text-align:center; padding:15px; background:green; color:#fff; text-decoration:none; margin-top:10px;">DOWNLOAD
-            NOW</a>
-    </div>
-
-    <hr>
-    <div id="log">Ready.</div>
-
-    <script>
-        let currentType = 'movie';
-        let currentResults = [];
-
-        function showView(id) {
-            document.querySelectorAll('div[id^="view-"]').forEach(v => v.classList.add('hidden'));
-            document.getElementById('view-' + id).classList.remove('hidden');
-        }
-
-        function setStatus(msg) {
-            const s = document.getElementById('status');
-            const l = document.getElementById('log');
-            if (msg) {
-                s.classList.remove('hidden');
-                s.innerText = msg;
-                l.innerText = "[LOG] " + msg;
-            } else {
-                s.classList.add('hidden');
-            }
-        }
-
-        async function doSearch() {
-            const q = document.getElementById('search-query').value;
-            const t = document.getElementById('search-type').value;
-            if (!q) return;
-
-            currentType = t;
-            setStatus("Searching...");
-
-            try {
-                const r = await fetch(`/api/akwam?action=search&q=${encodeURIComponent(q)}&type=${t}`);
-                const data = await r.json();
-
-                if (!data || data.length === 0) {
-                    setStatus("No results found.");
-                    return;
-                }
-
-                currentResults = data;
-                const container = document.getElementById('list-content');
-                container.innerHTML = `<h3>Results (${t})</h3>`;
-
-                data.forEach((item, index) => {
-                    const btn = document.createElement('button');
-                    btn.innerText = item.title;
-                    btn.onclick = () => loadItem(item);
-                    container.appendChild(btn);
-                });
-
-                setStatus("");
-                showView('list');
-            } catch (e) {
-                setStatus("Search failed: " + e.message);
-            }
-        }
-
-        async function loadItem(item) {
-            setStatus("Loading " + item.title + "...");
-            document.getElementById('details-title').innerText = item.title;
-            const container = document.getElementById('details-content');
-            container.innerHTML = "";
-
-            try {
-                if (currentType === 'series') {
-                    // Load episodes
-                    const r = await fetch(`/api/akwam?action=episodes&url=${encodeURIComponent(item.url)}`);
-                    const data = await r.json();
-                    data.forEach(ep => {
-                        const btn = document.createElement('button');
-                        btn.innerText = ep.title;
-                        btn.onclick = () => loadQualities(ep.url);
-                        container.appendChild(btn);
-                    });
-                } else {
-                    // Just load qualities for movie
-                    await loadQualities(item.url);
-                    return; // loadQualities handles the view switch
-                }
-                showView('details');
-                setStatus("");
-            } catch (e) {
-                setStatus("Error loading item: " + e.message);
-            }
-        }
-
-        async function loadQualities(url) {
-            setStatus("Fetching qualities...");
-            const container = document.getElementById('details-content');
-            // If it's a movie, we might need to show the details view now
-            showView('details');
-
-            try {
-                const r = await fetch(`/api/akwam?action=details&url=${encodeURIComponent(url)}`);
-                const data = await r.json();
-
-                let html = "<h4>Choose Quality</h4>";
-                for (const q in data) {
-                    html += `<button onclick="resolve('${data[q]}')">📥 DOWNLOAD ${q}</button>`;
-                }
-                container.innerHTML = html;
-                setStatus("");
-            } catch (e) {
-                setStatus("Error fetching qualities.");
-            }
-        }
-
-        async function resolve(url) {
-            setStatus("Resolving direct link...");
-            try {
-                const r = await fetch(`/api/akwam?action=resolve&url=${encodeURIComponent(url)}`);
-                const data = await r.json();
-
-                if (data.direct_url) {
-                    document.getElementById('final-url').value = data.direct_url;
-                    document.getElementById('download-btn').href = data.direct_url;
-                    showView('resolve');
-                    setStatus("");
-                } else {
-                    setStatus("Resolution failed (Site protection?)");
-                }
-            } catch (e) {
-                setStatus("Resolution error.");
-            }
-        }
-
-        function goBackToList() { showView('list'); }
-    </script>
+    <script src="script.js"></script>
 </body>
 
 </html>
