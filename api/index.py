@@ -21,7 +21,7 @@ app.add_middleware(
 # --- CONSTANTS (Directly from v2.0 CLI) ---
 # Pre-compiled regex for speed (matches CLI v2.0 logic)
 RE_SHORTEN = re.compile(r'href="(https?://[^"]+?/download/[^"]+)"')
-RE_DIRECT = re.compile(r'([a-z0-9]+\.[^"]+?/download/[^"]+)')
+RE_DIRECT = re.compile(r'([a-z0-9]{4,}\.\w+\.\w+/download/.*?)"')  # Fixed to match CLI
 RE_EPISODE = re.compile(r'href="((?:https?://[^/]+?)?/episode/\d+/.*?)"')
 RE_LINK = re.compile(r'href="(https?://[^"]+?/link/\d+)"')
 
