@@ -141,8 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         html += `<p style="color:var(--text-muted); margin-bottom:15px; font-weight:500;">Individual Episodes:</p><div class="btn-grid">`;
         episodes.forEach((ep, idx) => {
-            const escapedTitle = ep.title.replace(/'/g, "\\'");
-            html += `<button class="action-btn" onclick="fetchEpisodeQualities('${ep.url}', '${escapedTitle}')">
+            html += `<button class="action-btn" onclick="fetchEpisodeQualities('${ep.url}', '${ep.title}')">
                 <span style="opacity:0.5; font-size:0.8em; display:block">EP ${idx + 1}</span>
                 ${ep.title}
              </button>`;
@@ -150,14 +149,10 @@ document.addEventListener('DOMContentLoaded', () => {
         html += '</div><div id="resolve-result" style="margin-top:30px"></div>';
         modalBody.innerHTML = html;
 
-        // Attach event listener immediately
-        const btn = document.getElementById('batch-dl-btn');
-        if (btn) {
-            btn.onclick = (e) => {
-                e.preventDefault();
-                startBatchDownload(episodes);
-            };
-        }
+        setTimeout(() => {
+            const btn = document.getElementById('batch-dl-btn');
+            if (btn) btn.onclick = () => startBatchDownload(episodes);
+        }, 0);
     };
 
     // --- BATCH PROCESSOR ---
@@ -166,18 +161,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const progress = document.getElementById('batch-progress');
         const resultsBox = document.getElementById('batch-results');
 
-        if (!btn || !progress || !resultsBox) {
-            console.error("Batch elements missing");
-            return;
-        }
-
         btn.disabled = true;
-        btn.classList.add('btn-processing');
-        btn.innerHTML = '<span class="loader" style="width:16px; height:16px; border-width:2px; vertical-align:middle; margin-right:8px"></span> RESOLVING EPISODES...';
-
+        btn.innerHTML = '<span class="loader" style="width:20px; height:20px; border-width:2px; vertical-align:middle; margin-right:10px"></span> PROCESSING...';
         progress.style.display = 'block';
         resultsBox.style.display = 'block';
-        resultsBox.innerHTML = ''; // Clear previous results
 
         const collectedLinks = [];
         let completed = 0;
@@ -193,11 +180,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const percent = Math.round((completed / total) * 100);
             progress.innerHTML = `
                 <div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:0.9rem; color:var(--text-muted)">
-                    <span>Processing Batch ${currentBatch}/${totalBatches}</span>
+                    <span>Batch ${currentBatch}/${totalBatches}</span>
                     <span>${percent}%</span>
                 </div>
-                <div style="height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden; border: 1px solid var(--border-subtle)">
-                    <div style="height:100%; width:${percent}%; background:var(--accent); transition:width 0.3s ease"></div>
+                <div style="height:4px; background:rgba(255,255,255,0.1); border-radius:2px; overflow:hidden">
+                    <div style="height:100%; width:${percent}%; background:var(--secondary); transition:width 0.3s ease"></div>
                 </div>
             `;
 
