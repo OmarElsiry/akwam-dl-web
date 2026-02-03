@@ -19,15 +19,13 @@ app.add_middleware(
 )
 
 # --- CONSTANTS (Directly from v2.0 CLI) ---
-# Pre-compiled regex for speed (matches CLI v2.0 logic)
-RE_SHORTEN = re.compile(r'href="(https?://[^"]+?/download/[^"]+)"')
-RE_DIRECT = re.compile(r'([a-z0-9]{4,}\.\w+\.\w+/download/.*?)"')  # Fixed to match CLI
-RE_EPISODE = re.compile(r'href="((?:https?://[^/]+?)?/episode/\d+/.*?)"')
-RE_LINK = re.compile(r'href="(https?://[^"]+?/link/\d+)"')
+RGX_DL_URL = r'https?://\w*\.*\w+\.\w+/link/\d+'
+RGX_SHORTEN_URL = r'https?://\w*\.*\w+\.\w+/download/.*?"'
+RGX_DIRECT_URL = r'([a-z0-9]{4,}\.\w+\.\w+/download/.*?)"'
+RGX_QUALITY_TAG = r'tab-content quality.*?a href="(https?://\w*\.*\w+\.\w+/link/\d+)"'
 
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36',
-    'Referer': 'https://ak.sv/'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
 
 BOT_TOKEN = "7917912042:AAHhtfKASDY54Q1U1X5650cWublsjtpvTi8"
@@ -71,8 +69,10 @@ class AkwamAPI:
         resp.encoding = 'utf-8'
         clean_base = self.base_url.rstrip('/')
         
-        # Use pre-compiled regex for better performance
-        matches = RE_EPISODE.findall(resp.text)
+        # Broad pattern to catch absolute and relative links
+        # Looking for href="/episode/..." or href="https://ak.sv/episode/..."
+        pattern = r'href="((?:https?://ak\.sv)?/episode/\d+/.*?)"'
+        matches = re.findall(pattern, resp.text)
             
         episodes = []
         seen = set()
@@ -89,20 +89,17 @@ class AkwamAPI:
     def get_qualities(self, url):
         resp = requests.get(url, headers=HEADERS)
         resp.encoding = 'utf-8'
+        page_content = resp.text.replace('\n', '')
         
-        # Find all download links (Akwam uses /link/ identifier)
-        all_links = RE_LINK.findall(resp.text)
-        
-        # Identify quality labels in the order they appear
-        possible_labels = ['1080p', '720p', '480p', '360p', 'Full HD', 'HD', 'SD']
-        label_pattern = '|'.join(possible_labels)
-        found_labels = re.findall(rf'>\s*({label_pattern})\s*<', resp.text)
+        # Search for link/... identifiers inside quality blocks
+        parsed_links = re.findall(RGX_QUALITY_TAG, page_content)
         
         qualities = {}
-        for i, link in enumerate(all_links):
-            label = found_labels[i] if i < len(found_labels) else f"Quality {i+1}"
-            qualities[label] = link
-                
+        i = 0
+        for q in ['1080p', '720p', '480p']:
+            if f'>{q}</' in resp.text and i < len(parsed_links):
+                qualities[q] = parsed_links[i]
+                i += 1
         return qualities
 
     def resolve_link(self, short_url):
@@ -110,59 +107,40 @@ class AkwamAPI:
             short_url = 'https://' + short_url
         
         # Step 1: Shortened Link -> Download Page
-        try:
-            resp = requests.get(short_url, headers=HEADERS, timeout=10)
-            match1 = RE_SHORTEN.search(resp.text)
+        resp = requests.get(short_url, headers=HEADERS)
+        match1 = re.search(f'({RGX_SHORTEN_URL})', resp.text)
+        if not match1: return None
+        
+        target = match1.group(1).rstrip('"')
+        if not target.startswith('http'): target = 'https://' + target
+        
+        # Step 2: Download Page -> Final Direct Link
+        resp = requests.get(target, headers=HEADERS)
+        if resp.url != target:
+            resp = requests.get(resp.url, headers=HEADERS)
             
-            if match1:
-                target = match1.group(1)
-            elif "/download/" in resp.url:
-                target = resp.url
-            else:
-                return None
-                
-            target = target.rstrip('"')
-            if not target.startswith('http'): target = 'https://' + target
-            
-            # Step 2: Download Page -> Final Direct Link
-            resp = requests.get(target, headers=HEADERS, timeout=10)
-            if resp.url != target:
-                resp = requests.get(resp.url, headers=HEADERS, timeout=10)
-                
-            match2 = RE_DIRECT.search(resp.text)
-            if match2:
-                final_url = match2.group(1).rstrip('"')
-                return final_url if final_url.startswith('http') else 'https://' + final_url
-        except:
-            pass
+        match2 = re.search(f'({RGX_DIRECT_URL})', resp.text)
+        if match2:
+            final_url = match2.group(1).rstrip('"')
+            return final_url if final_url.startswith('http') else 'https://' + final_url
         return None
 
-    def batch_resolve(self, url):
-        from concurrent.futures import ThreadPoolExecutor
-        episodes = self.fetch_episodes(url)
+    def batch_resolve(self, series_id):
+        # Mirroring CLI's recursive_episodes
+        series_url = f"{self.base_url}/series/{series_id}"
+        episodes = self.fetch_episodes(series_url)
         results = []
         
-        def resolve_worker(ep):
-            try:
-                # Step 1: Get quality links
-                quals = self.get_qualities(ep['url'])
-                if not quals: return None
-                
-                # Step 2: Resolve highest quality
-                target_q = '1080p' if '1080p' in quals else ('720p' if '720p' in quals else list(quals.keys())[0])
-                direct = self.resolve_link(quals[target_q])
-                
+        # Limit to 15 episodes to prevent Vercel timeout (10s limit)
+        for ep in episodes[:15]:
+            qualities = self.get_qualities(ep['url'])
+            if qualities:
+                # Pick first available quality (usually highest)
+                q_key = list(qualities.keys())[0]
+                direct = self.resolve_link(qualities[q_key])
                 if direct:
-                    return {"title": ep['title'], "url": direct, "quality": target_q}
-            except Exception as e:
-                print(f"Batch worker error for {ep.get('title', 'Unknown')}: {e}")
-            return None
-
-        # Process up to 25 episodes in parallel to stay under Vercel's 10s limit
-        with ThreadPoolExecutor(max_workers=15) as executor:
-            resolved = list(executor.map(resolve_worker, episodes[:25]))
-            
-        return [r for r in resolved if r]
+                    results.append({"title": ep['title'], "url": direct})
+        return results
 
 akwam_api = AkwamAPI()
 
@@ -192,7 +170,6 @@ async def handle_akwam(action: str, q: Optional[str] = None, type: Optional[str]
     if action == 'episodes': return akwam_api.fetch_episodes(url)
     if action == 'details': return akwam_api.get_qualities(url)
     if action == 'resolve': return {"direct_url": akwam_api.resolve_link(url)}
-    if action == 'batch': return akwam_api.batch_resolve(url)
     return {"error": "Invalid action"}
 
 # --- TELEGRAM BOT ---

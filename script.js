@@ -155,66 +155,106 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btn) {
             btn.onclick = (e) => {
                 e.preventDefault();
-                startBatchDownload(seriesUrl); // High-speed backend batching
+                startBatchDownload(episodes);
             };
         }
     };
 
-    // --- BATCH PROCESSOR (BACKEND DRIVEN - HIGH SPEED) ---
-    window.startBatchDownload = async (seriesUrl) => {
+    // --- BATCH PROCESSOR ---
+    window.startBatchDownload = async (episodes) => {
         const btn = document.getElementById('batch-dl-btn');
         const progress = document.getElementById('batch-progress');
         const resultsBox = document.getElementById('batch-results');
 
-        if (!btn || !progress || !resultsBox) return;
+        if (!btn || !progress || !resultsBox) {
+            console.error("Batch elements missing");
+            return;
+        }
 
         btn.disabled = true;
         btn.classList.add('btn-processing');
-        btn.innerHTML = '<span class="loader" style="width:16px; height:16px; border-width:2px; vertical-align:middle; margin-right:8px"></span> RESOLVING ENTIRE SEASON...';
+        btn.innerHTML = '<span class="loader" style="width:16px; height:16px; border-width:2px; vertical-align:middle; margin-right:8px"></span> RESOLVING EPISODES...';
 
         progress.style.display = 'block';
-        progress.innerHTML = `
-            <div style="text-align:center; padding: 10px;">
-                <p style="color:var(--text-secondary); margin-bottom:12px; font-size:0.9rem;">
-                    Parallel resolving started... and should finish in 5-10s
-                </p>
-                <div style="height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden; border: 1px solid var(--border-subtle)">
-                    <div class="progress-bar-shimmer" style="height:100%; width:100%; background:var(--accent); opacity:0.6;"></div>
-                </div>
-            </div>
-        `;
-
         resultsBox.style.display = 'block';
-        resultsBox.innerHTML = '';
+        resultsBox.innerHTML = ''; // Clear previous results
 
-        try {
-            const res = await fetch(`/api/akwam?action=batch&url=${encodeURIComponent(seriesUrl)}`);
-            const data = await res.json();
+        const collectedLinks = [];
+        let completed = 0;
+        const total = episodes.length;
+        const CHUNK_SIZE = 3;
 
-            if (!data || data.length === 0) throw new Error("No links could be resolved.");
+        for (let i = 0; i < total; i += CHUNK_SIZE) {
+            const chunk = episodes.slice(i, i + CHUNK_SIZE);
+            const currentBatch = Math.ceil((i + 1) / CHUNK_SIZE);
+            const totalBatches = Math.ceil(total / CHUNK_SIZE);
 
-            const collectedLinks = [];
-            data.forEach(item => {
-                collectedLinks.push(item.url);
-                const div = document.createElement('div');
-                div.className = 'result-row fade-in';
-                div.innerHTML = `
-                    <div class="row-info">
-                        <span class="row-title">${item.title}</span>
-                        <span class="row-badge">${item.quality}</span>
-                    </div>
-                    <a href="${item.url}" target="_blank" class="row-btn">Download</a>
-                `;
-                resultsBox.appendChild(div);
-            });
+            // Progress Bar UI
+            const percent = Math.round((completed / total) * 100);
+            progress.innerHTML = `
+                <div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:0.9rem; color:var(--text-muted)">
+                    <span>Processing Batch ${currentBatch}/${totalBatches}</span>
+                    <span>${percent}%</span>
+                </div>
+                <div style="height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden; border: 1px solid var(--border-subtle)">
+                    <div style="height:100%; width:${percent}%; background:var(--accent); transition:width 0.3s ease"></div>
+                </div>
+            `;
 
-            btn.innerHTML = '✅ COMPLETED';
-            btn.classList.remove('btn-processing');
-            btn.classList.add('success');
+            await Promise.all(chunk.map(async (ep) => {
+                try {
+                    const qRes = await fetch(`/api/akwam?action=details&url=${encodeURIComponent(ep.url)}`);
+                    const qualities = await qRes.json();
 
+                    if (!qualities || Object.keys(qualities).length === 0) throw new Error("No qualities");
+
+                    const qKeys = Object.keys(qualities);
+                    let targetQ = qKeys.find(k => k.includes('720')) || qKeys[0];
+                    let downloadPageUrl = qualities[targetQ];
+
+                    const rRes = await fetch(`/api/akwam?action=resolve&url=${encodeURIComponent(downloadPageUrl)}`);
+                    const rData = await rRes.json();
+
+                    if (rData.direct_url) {
+                        collectedLinks.push(rData.direct_url);
+
+                        const div = document.createElement('div');
+                        div.className = 'result-row fade-in';
+                        div.innerHTML = `
+                            <div class="row-info">
+                                <span class="row-title">${ep.title}</span>
+                                <span class="row-badge">${targetQ}</span>
+                            </div>
+                            <a href="${rData.direct_url}" class="row-btn">Download</a>
+                        `;
+                        resultsBox.prepend(div);
+                    } else {
+                        throw new Error("Resolution failed");
+                    }
+                } catch (e) {
+                    const div = document.createElement('div');
+                    div.className = 'result-row fade-in error';
+                    div.innerHTML = `
+                        <div class="row-info">
+                            <span class="row-title">${ep.title}</span>
+                        </div>
+                        <span class="row-status">Failed</span>
+                    `;
+                    resultsBox.appendChild(div);
+                }
+                completed++;
+            }));
+
+            await new Promise(r => setTimeout(r, 500));
+        }
+
+        btn.innerHTML = '✅ COMPLETED';
+        btn.classList.add('success');
+
+        if (collectedLinks.length > 0) {
             progress.innerHTML = `
                 <div style="background:rgba(74, 222, 128, 0.1); border:1px solid rgba(74, 222, 128, 0.2); padding:15px; border-radius:12px; margin-top:15px;">
-                    <p style="color:#4ade80; font-weight:600; margin-bottom:10px">🎉 Resolved ${collectedLinks.length} Episodes</p>
+                    <p style="color:#4ade80; font-weight:600; margin-bottom:10px">🎉 ${collectedLinks.length} Links Ready</p>
                     <button id="copy-all-btn" class="action-btn" style="width:100%; background:var(--primary); color:#000; font-weight:800; border:none">
                         📋 COPY ALL LINKS
                     </button>
@@ -223,15 +263,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             document.getElementById('copy-all-btn').onclick = function () {
                 navigator.clipboard.writeText(collectedLinks.join('\n'));
-                this.innerText = "✅ COPIED!";
-                setTimeout(() => { this.innerText = "📋 COPY ALL LINKS"; }, 2000);
+                this.innerText = "✅ COPIED TO CLIPBOARD!";
+                this.style.background = "#4ade80";
+                setTimeout(() => {
+                    this.innerText = "📋 COPY ALL LINKS";
+                    this.style.background = "var(--primary)";
+                }, 2000);
             };
-
-        } catch (error) {
-            btn.innerHTML = '❌ FAILED';
-            btn.disabled = false;
-            btn.classList.remove('btn-processing');
-            progress.innerHTML = `<p style="color:#f87171; text-align:center; margin-top:10px">Error: ${error.message}</p>`;
+        } else {
+            progress.innerHTML = `<p style="color:#f87171; text-align:center; margin-top:10px">No valid links were found.</p>`;
         }
     };
 
@@ -255,7 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const resDiv = document.getElementById('resolve-result');
         if (!resDiv) return;
 
-        resDiv.innerHTML = '<p style="text-align:center; color:var(--accent); animation: btn-pulse 1.5s infinite">Resolving download link...</p>';
+        resDiv.innerHTML = '<p style="text-align:center; color:var(--secondary); animation: pulse 1s infinite">Resolving...</p>';
         try {
             const rRes = await fetch(`/api/akwam?action=resolve&url=${encodeURIComponent(url)}`);
             const data = await rRes.json();
