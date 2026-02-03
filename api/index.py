@@ -21,8 +21,8 @@ app.add_middleware(
 # --- CONSTANTS (Directly from v2.0 CLI) ---
 RGX_DL_URL = r'https?://\w*\.*\w+\.\w+/link/\d+'
 RGX_SHORTEN_URL = r'https?://\w*\.*\w+\.\w+/download/.*?"'
-RGX_DIRECT_URL = r'([a-z0-9]{4,}\.\w+\.\w+/download/.*?)"'
-RGX_QUALITY_TAG = r'tab-content quality.*?a href="(https?://\w*\.*\w+\.\w+/link/\d+)"'
+RGX_DIRECT_URL = r'href="(https?://.*?/download/.*?)"'
+RGX_QUALITY_TAG = r'tab-content quality.*?a href="(https?://.*?/link/\d+)"'
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
