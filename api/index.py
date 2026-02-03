@@ -115,27 +115,43 @@ class AkwamAPI:
     def resolve_link(self, short_url):
         if not short_url.startswith('http'):
             short_url = 'https://' + short_url
-        
-        # Step 1: Shortened Link -> Download Page
-        try:
-            resp = requests.get(short_url, headers=HEADERS, timeout=15)
-            match1 = re.search(f'({RGX_SHORTEN_URL})', resp.text)
-            if not match1: return None
             
-            target = match1.group(1).rstrip('"')
+        try:
+            # Step 1: Quality Link -> Intermediate Page
+            resp = requests.get(short_url, headers=HEADERS, timeout=15)
+            
+            # Potential next link (Intermediate or Final)
+            next_match = re.search(f'({RGX_SHORTEN_URL})', resp.text)
+            if not next_match:
+                # Fallback: check for final link directly
+                final_match = re.search(f'({RGX_DIRECT_URL})', resp.text)
+                if final_match:
+                    return final_match.group(1).rstrip('"')
+                return None
+                
+            target = next_match.group(1).rstrip('"')
             if not target.startswith('http'): target = 'https://' + target
             
-            # Step 2: Download Page -> Final Direct Link
+            # Step 2: Intermediate Page -> Final Page or Direct Link
             resp = requests.get(target, headers=HEADERS, timeout=15)
-            if resp.url != target:
-                resp = requests.get(resp.url, headers=HEADERS, timeout=15)
+            
+            # Look for final link
+            final_match = re.search(f'({RGX_DIRECT_URL})', resp.text)
+            if final_match:
+                res = final_match.group(1).rstrip('"')
+                return res if res.startswith('http') else 'https://' + res
+            
+            # One more hop just in case
+            next_match2 = re.search(f'({RGX_SHORTEN_URL})', resp.text)
+            if next_match2 and next_match2.group(1) != target:
+                target2 = next_match2.group(1).rstrip('"')
+                resp = requests.get(target2, headers=HEADERS, timeout=15)
+                final_match2 = re.search(f'({RGX_DIRECT_URL})', resp.text)
+                if final_match2:
+                    res = final_match2.group(1).rstrip('"')
+                    return res if res.startswith('http') else 'https://' + res
         except:
             return None
-            
-        match2 = re.search(f'({RGX_DIRECT_URL})', resp.text)
-        if match2:
-            final_url = match2.group(1).rstrip('"')
-            return final_url if final_url.startswith('http') else 'https://' + final_url
         return None
 
     def batch_resolve(self, series_id):
