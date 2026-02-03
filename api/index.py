@@ -110,34 +110,31 @@ class AkwamAPI:
             short_url = 'https://' + short_url
         
         # Step 1: Shortened Link -> Download Page
-        resp = requests.get(short_url, headers=HEADERS)
-        
-        # Intermediate link lookup
-        match1 = RE_SHORTEN.search(resp.text)
-        
-        if match1:
-            target = match1.group(1)
-        elif "/download/" in resp.url:
-            target = resp.url
-        else:
-            return None
+        try:
+            resp = requests.get(short_url, headers=HEADERS, timeout=10)
+            match1 = RE_SHORTEN.search(resp.text)
             
-        target = target.rstrip('"')
-        if not target.startswith('http'): target = 'https://' + target
-        
-        # Step 2: Download Page -> Final Direct Link
-        resp = requests.get(target, headers=HEADERS)
-        if resp.url != target:
-            # Handle redirection just like the CLI script
-            resp = requests.get(resp.url, headers=HEADERS)
+            if match1:
+                target = match1.group(1)
+            elif "/download/" in resp.url:
+                target = resp.url
+            else:
+                return None
+                
+            target = target.rstrip('"')
+            if not target.startswith('http'): target = 'https://' + target
             
-        # The key regex capturing alphanumeric hash links
-        match2 = RE_DIRECT.search(resp.text)
-        
-        if match2:
-            final_url = match2.group(1).rstrip('"')
-            # Ensure protocol
-            return final_url if final_url.startswith('http') else 'https://' + final_url
+            # Step 2: Download Page -> Final Direct Link
+            resp = requests.get(target, headers=HEADERS, timeout=10)
+            if resp.url != target:
+                resp = requests.get(resp.url, headers=HEADERS, timeout=10)
+                
+            match2 = RE_DIRECT.search(resp.text)
+            if match2:
+                final_url = match2.group(1).rstrip('"')
+                return final_url if final_url.startswith('http') else 'https://' + final_url
+        except:
+            pass
         return None
 
     def batch_resolve(self, url):
