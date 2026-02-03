@@ -25,7 +25,9 @@ RGX_DIRECT_URL = r'([a-z0-9]{4,}\.\w+\.\w+/download/.*?)"'
 RGX_QUALITY_TAG = r'tab-content quality.*?a href="(https?://\w*\.*\w+\.\w+/link/\d+)"'
 
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://ak.sv/'
 }
 
 BOT_TOKEN = "7917912042:AAHhtfKASDY54Q1U1X5650cWublsjtpvTi8"
@@ -35,18 +37,23 @@ USER_STATES = {}
 
 class AkwamAPI:
     def __init__(self, base_url="https://ak.sv/"):
+        self.base_url = base_url.rstrip('/')
         try:
-            resp = requests.get(base_url, headers=HEADERS, timeout=5)
+            resp = requests.get(base_url, headers=HEADERS, timeout=10)
             resp.encoding = 'utf-8'
-            self.base_url = resp.url.rstrip('/')
+            if resp.status_code == 200:
+                self.base_url = resp.url.rstrip('/')
         except:
-            self.base_url = base_url.rstrip('/')
+            pass
 
     def search(self, query, _type='movie', page=1):
         query = query.replace(' ', '+')
         url = f"{self.base_url}/search?q={query}&section={_type}&page={page}"
-        resp = requests.get(url, headers=HEADERS)
-        resp.encoding = 'utf-8'
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=15)
+            resp.encoding = 'utf-8'
+        except:
+            return []
         
         pattern = rf'({self.base_url}/{_type}/\d+/.*?)"'
         matches = re.findall(pattern, resp.text)
@@ -63,8 +70,11 @@ class AkwamAPI:
         return results
 
     def fetch_episodes(self, series_url):
-        resp = requests.get(series_url, headers=HEADERS)
-        resp.encoding = 'utf-8'
+        try:
+            resp = requests.get(series_url, headers=HEADERS, timeout=15)
+            resp.encoding = 'utf-8'
+        except:
+            return []
         pattern = rf'({self.base_url}/episode/\d+/.*?)"'
         matches = re.findall(pattern, resp.text)
         
@@ -84,8 +94,11 @@ class AkwamAPI:
         return episodes
 
     def get_qualities(self, url):
-        resp = requests.get(url, headers=HEADERS)
-        resp.encoding = 'utf-8'
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=15)
+            resp.encoding = 'utf-8'
+        except:
+            return {}
         page_content = resp.text.replace('\n', '')
         
         # Search for link/... identifiers inside quality blocks
@@ -104,17 +117,20 @@ class AkwamAPI:
             short_url = 'https://' + short_url
         
         # Step 1: Shortened Link -> Download Page
-        resp = requests.get(short_url, headers=HEADERS)
-        match1 = re.search(f'({RGX_SHORTEN_URL})', resp.text)
-        if not match1: return None
-        
-        target = match1.group(1).rstrip('"')
-        if not target.startswith('http'): target = 'https://' + target
-        
-        # Step 2: Download Page -> Final Direct Link
-        resp = requests.get(target, headers=HEADERS)
-        if resp.url != target:
-            resp = requests.get(resp.url, headers=HEADERS)
+        try:
+            resp = requests.get(short_url, headers=HEADERS, timeout=15)
+            match1 = re.search(f'({RGX_SHORTEN_URL})', resp.text)
+            if not match1: return None
+            
+            target = match1.group(1).rstrip('"')
+            if not target.startswith('http'): target = 'https://' + target
+            
+            # Step 2: Download Page -> Final Direct Link
+            resp = requests.get(target, headers=HEADERS, timeout=15)
+            if resp.url != target:
+                resp = requests.get(resp.url, headers=HEADERS, timeout=15)
+        except:
+            return None
             
         match2 = re.search(f'({RGX_DIRECT_URL})', resp.text)
         if match2:
