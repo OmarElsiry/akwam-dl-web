@@ -67,14 +67,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             card.innerHTML = `
                 <div class="card-content">
-                    <div class="card-header">
-                        <span class="card-icon">🎬</span>
+                    <div class="card-header-row">
+                        <div class="card-icon">🎬</div>
                         <span class="card-id">${displayId}</span>
                     </div>
                     <h3 class="card-title">${title}</h3>
-                    <div class="card-actions">
-                        <span class="view-btn">View Details &rarr;</span>
-                    </div>
+                    <button class="view-btn">View Details</button>
                 </div>
             `;
 
