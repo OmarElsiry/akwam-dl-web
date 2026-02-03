@@ -20,7 +20,7 @@ app.add_middleware(
 
 # --- CONSTANTS (Directly from v2.0 CLI) ---
 RGX_DL_URL = r'https?://.*?/(?:link|watch)/\d+'
-RGX_SHORTEN_URL = r'https?://.*?/download/.*?"'
+RGX_SHORTEN_URL = r'https?://.*?/(?:download|watch)/.*?"'
 RGX_DIRECT_URL = r'href="(https?://.*?/download/.*?)"'
 RGX_QUALITY_TAG = r'tab-content quality.*?a href="(https?://.*?(?:link|watch)/\d+)"'
 
