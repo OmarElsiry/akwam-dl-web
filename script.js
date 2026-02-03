@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsContainer.innerHTML = `
             <div class="loading-state" style="grid-column:1/-1; text-align:center">
                 <span class="loader"></span>
-                <p style="margin-top:20px; color:var(--text-muted)">Searching...</p>
+                <p style="margin-top:20px; color:var(--text-muted); font-weight: 500; letter-spacing: 0.5px;">IDENTIFYING MEDIA ASSETS...</p>
             </div>`;
 
         try {
@@ -45,10 +45,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderResults = (results) => {
         if (!results || results.length === 0) {
             resultsContainer.innerHTML = `
-            <div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 50px;">
-                <p>Ready to search.</p>
-                <small style="opacity:0.5">Enter a movie or series name</small>
-            </div>`;
+                <div style="grid-column:1/-1; text-align:center; padding:100px; color:var(--text-muted)">
+                    <p style="font-size:1.2rem; margin-bottom:10px">No results found</p>
+                    <p style="font-size:0.9rem; opacity:0.6">Try a different keyword</p>
+                </div>`;
             return;
         }
 
@@ -58,14 +58,12 @@ document.addEventListener('DOMContentLoaded', () => {
             card.className = 'card fade-in';
             card.style.animationDelay = `${index * 50}ms`;
 
-            const placeholder = `https://ui-avatars.com/api/?name=${encodeURIComponent(item.title)}&background=random&size=300`;
-
             card.innerHTML = `
-                <div class="card-img-wrapper">
-                    <img src="${placeholder}" class="card-img" alt="${item.title}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMzAwIiB2aWV3Qm94PSIwIDAgMjAwIDMwMCI+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMyMjIiLz48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZpbGw9IiM1NTUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPk5vIEltYWdlPC90ZXh0Pjwvc3ZnPg=='">
-                    <div class="card-overlay">
-                        <h3 class="card-title">${item.title}</h3>
-                        <p class="card-meta">AKWAM • ${item.id || 'Media'}</p>
+                <div class="card-content">
+                    <h3 class="card-title">${item.title}</h3>
+                    <div class="card-meta">
+                        <span class="badge">STREAMLINE</span>
+                        <span style="opacity:0.6; font-size:0.8rem">${item.id || 'AK-Media'}</span>
                     </div>
                 </div>
             `;
