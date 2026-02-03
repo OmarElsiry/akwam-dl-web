@@ -151,6 +151,16 @@ async def root_ui():
         return FileResponse(index_path)
     return {"error": "UI file (index.html) not found", "path_searched": index_path}
 
+@app.get("/style.css")
+async def style_css():
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return FileResponse(os.path.join(base_dir, "style.css"), media_type="text/css")
+
+@app.get("/script.js")
+async def script_js():
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return FileResponse(os.path.join(base_dir, "script.js"), media_type="application/javascript")
+
 @app.get("/api/akwam")
 async def handle_akwam(action: str, q: Optional[str] = None, type: Optional[str] = "movie", url: Optional[str] = None):
     if action == 'search': return akwam_api.search(q, type)
