@@ -46,8 +46,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!results || results.length === 0) {
             resultsContainer.innerHTML = `
             <div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 50px;">
-                <p>No results found for your search.</p>
-                <small style="opacity:0.5">Try checking the spelling or using a different keyword</small>
+                <p>Ready to search.</p>
+                <small style="opacity:0.5">Enter a movie or series name</small>
             </div>`;
             return;
         }
@@ -55,24 +55,18 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsContainer.innerHTML = '';
         results.forEach((item, index) => {
             const card = document.createElement('div');
-            card.className = 'card text-only fade-in'; // text-only class for specific styling
+            card.className = 'card fade-in';
             card.style.animationDelay = `${index * 50}ms`;
 
-            // Extract ID for display (visual flair)
-            const idMatch = item.url.match(/\/(\d+)\//);
-            const displayId = idMatch ? `#${idMatch[1]}` : 'MEDIA';
-
-            // Clean title
-            const title = item.title.trim();
+            const placeholder = `https://ui-avatars.com/api/?name=${encodeURIComponent(item.title)}&background=random&size=300`;
 
             card.innerHTML = `
-                <div class="card-content">
-                    <div class="card-header-row">
-                        <div class="card-icon">🎬</div>
-                        <span class="card-id">${displayId}</span>
+                <div class="card-img-wrapper">
+                    <img src="${placeholder}" class="card-img" alt="${item.title}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMzAwIiB2aWV3Qm94PSIwIDAgMjAwIDMwMCI+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMyMjIiLz48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZpbGw9IiM1NTUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPk5vIEltYWdlPC90ZXh0Pjwvc3ZnPg=='">
+                    <div class="card-overlay">
+                        <h3 class="card-title">${item.title}</h3>
+                        <p class="card-meta">AKWAM • ${item.id || 'Media'}</p>
                     </div>
-                    <h3 class="card-title">${title}</h3>
-                    <button class="view-btn">View Details</button>
                 </div>
             `;
 
