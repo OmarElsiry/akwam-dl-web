@@ -29,5 +29,5 @@ def check_page(url):
         print(f"  - {m}")
 
 if __name__ == "__main__":
-    # Valid link from test_quality.py output
-    check_page("http://go.ak.sv/link/109981")
+    # From previous test
+    check_page("http://link.akwam.bz/download/624953930499e/")
