@@ -182,18 +182,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const collectedLinks = [];
         let completed = 0;
         const total = episodes.length;
-        const CHUNK_SIZE = 3;
 
-        for (let i = 0; i < total; i += CHUNK_SIZE) {
-            const chunk = episodes.slice(i, i + CHUNK_SIZE);
-            const currentBatch = Math.ceil((i + 1) / CHUNK_SIZE);
-            const totalBatches = Math.ceil(total / CHUNK_SIZE);
+        // SEQUENTIAL PROCESSING is more robust for Akwam
+        for (let i = 0; i < total; i++) {
+            const ep = episodes[i];
 
-            // Progress Bar UI
-            const percent = Math.round((completed / total) * 100);
+            // Progress Bar UI Update
+            const percent = Math.round((i / total) * 100);
             progress.innerHTML = `
-                <div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:0.9rem; color:var(--text-muted)">
-                    <span>Processing Batch ${currentBatch}/${totalBatches}</span>
+                <div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:0.9rem; color:var(--text-secondary)">
+                    <span>Processing Episode ${i + 1} of ${total}</span>
                     <span>${percent}%</span>
                 </div>
                 <div style="height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden; border: 1px solid var(--border-subtle)">
@@ -201,51 +199,52 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
-            await Promise.all(chunk.map(async (ep) => {
-                try {
-                    const qRes = await fetch(`/api/akwam?action=details&url=${encodeURIComponent(ep.url)}`);
-                    const qualities = await qRes.json();
+            try {
+                // Fetch qualities
+                const qRes = await fetch(`/api/akwam?action=details&url=${encodeURIComponent(ep.url)}`);
+                if (!qRes.ok) throw new Error(`HTTP Error ${qRes.status}`);
+                const qualities = await qRes.json();
 
-                    if (!qualities || Object.keys(qualities).length === 0) throw new Error("No qualities");
+                if (!qualities || Object.keys(qualities).length === 0) throw new Error("No qualities");
 
-                    const qKeys = Object.keys(qualities);
-                    let targetQ = qKeys.find(k => k.includes('720')) || qKeys[0];
-                    let downloadPageUrl = qualities[targetQ];
+                const qKeys = Object.keys(qualities);
+                let targetQ = qKeys.find(k => k.includes('720')) || qKeys[0];
+                let downloadPageUrl = qualities[targetQ];
 
-                    const rRes = await fetch(`/api/akwam?action=resolve&url=${encodeURIComponent(downloadPageUrl)}`);
-                    const rData = await rRes.json();
+                const rRes = await fetch(`/api/akwam?action=resolve&url=${encodeURIComponent(downloadPageUrl)}`);
+                const rData = await rRes.json();
 
-                    if (rData.direct_url) {
-                        collectedLinks.push(rData.direct_url);
+                if (rData && rData.direct_url) {
+                    collectedLinks.push(rData.direct_url);
 
-                        const div = document.createElement('div');
-                        div.className = 'result-row fade-in';
-                        div.innerHTML = `
-                            <div class="row-info">
-                                <span class="row-title">${ep.title}</span>
-                                <span class="row-badge">${targetQ}</span>
-                            </div>
-                            <a href="${rData.direct_url}" class="row-btn">Download</a>
-                        `;
-                        resultsBox.prepend(div);
-                    } else {
-                        throw new Error("Resolution failed");
-                    }
-                } catch (e) {
                     const div = document.createElement('div');
-                    div.className = 'result-row fade-in error';
+                    div.className = 'result-row fade-in';
                     div.innerHTML = `
                         <div class="row-info">
                             <span class="row-title">${ep.title}</span>
+                            <span class="row-badge">${targetQ}</span>
                         </div>
-                        <span class="row-status">Failed</span>
+                        <a href="${rData.direct_url}" target="_blank" class="row-btn">Download</a>
                     `;
-                    resultsBox.appendChild(div);
+                    resultsBox.prepend(div);
+                } else {
+                    throw new Error("No link found");
                 }
-                completed++;
-            }));
+            } catch (e) {
+                console.error(`Error resolving ${ep.title}:`, e);
+                const div = document.createElement('div');
+                div.className = 'result-row fade-in error';
+                div.innerHTML = `
+                    <div class="row-info">
+                        <span class="row-title">${ep.title}</span>
+                    </div>
+                    <span class="row-status">Failed - Try Manually</span>
+                `;
+                resultsBox.appendChild(div);
+            }
 
-            await new Promise(r => setTimeout(r, 500));
+            // Short delay to avoid rate trigger
+            await new Promise(r => setTimeout(r, 600));
         }
 
         btn.innerHTML = '✅ COMPLETED';
