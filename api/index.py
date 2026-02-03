@@ -48,8 +48,7 @@ class AkwamAPI:
         resp = requests.get(url, headers=HEADERS)
         resp.encoding = 'utf-8'
         
-        clean_base = self.base_url.rstrip('/')
-        pattern = rf'({clean_base}/{_type}/\d+/.*?)"'
+        pattern = rf'({self.base_url}/{_type}/\d+/.*?)"'
         matches = re.findall(pattern, resp.text)
         
         results = []
@@ -57,33 +56,31 @@ class AkwamAPI:
         for link in matches[::-1]:
             if link not in seen:
                 seen.add(link)
+                # Unquote FIRST, then format
                 slug = link.split('/')[-1]
                 title = unquote(slug).replace('-', ' ').title()
-                # Ensure the URL is absolute
-                full_url = link if link.startswith('http') else f"{clean_base}{link}"
-                results.append({'title': title, 'url': full_url})
+                results.append({'title': title, 'url': link})
         return results
 
     def fetch_episodes(self, series_url):
         resp = requests.get(series_url, headers=HEADERS)
         resp.encoding = 'utf-8'
-        clean_base = self.base_url.rstrip('/')
-        
-        # Broad pattern to catch absolute and relative links
-        # Looking for href="/episode/..." or href="https://ak.sv/episode/..."
-        pattern = r'href="((?:https?://ak\.sv)?/episode/\d+/.*?)"'
+        pattern = rf'({self.base_url}/episode/\d+/.*?)"'
         matches = re.findall(pattern, resp.text)
+        
+        if not matches:
+            matches = re.findall(r'href="(/episode/\d+/.*?)"', resp.text)
+            matches = [f"{self.base_url}{m}" for m in matches]
             
         episodes = []
         seen = set()
-        for link in matches[::-1]:
-            # Construct full absolute URL
-            full_url = link if link.startswith('http') else f"{clean_base}{link}"
-            if full_url not in seen:
-                seen.add(full_url)
-                slug = full_url.split('/')[-1]
+        for url in matches[::-1]:
+            if url not in seen:
+                seen.add(url)
+                # Unquote FIRST, then format
+                slug = url.split('/')[-1]
                 title = unquote(slug).replace('-', ' ').title()
-                episodes.append({'title': title, 'url': full_url})
+                episodes.append({'title': title, 'url': url})
         return episodes
 
     def get_qualities(self, url):
