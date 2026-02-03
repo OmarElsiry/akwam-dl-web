@@ -19,15 +19,13 @@ app.add_middleware(
 )
 
 # --- CONSTANTS (Directly from v2.0 CLI) ---
-RGX_DL_URL = r'https?://.*?/(?:link|watch)/\d+'
-RGX_SHORTEN_URL = r'https?://.*?/(?:download|watch)/.*?"'
-RGX_DIRECT_URL = r'href="(https?://.*?/download/.*?)"'
-RGX_QUALITY_TAG = r'tab-content quality.*?a href="(https?://.*?(?:link|watch)/\d+)"'
+RGX_DL_URL = r'https?://\w*\.*\w+\.\w+/link/\d+'
+RGX_SHORTEN_URL = r'https?://\w*\.*\w+\.\w+/download/.*?"'
+RGX_DIRECT_URL = r'([a-z0-9]{4,}\.\w+\.\w+/download/.*?)"'
+RGX_QUALITY_TAG = r'tab-content quality.*?a href="(https?://\w*\.*\w+\.\w+/link/\d+)"'
 
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Referer': 'https://ak.sv/'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
 
 BOT_TOKEN = "7917912042:AAHhtfKASDY54Q1U1X5650cWublsjtpvTi8"
@@ -37,23 +35,18 @@ USER_STATES = {}
 
 class AkwamAPI:
     def __init__(self, base_url="https://ak.sv/"):
-        self.base_url = base_url.rstrip('/')
         try:
-            resp = requests.get(base_url, headers=HEADERS, timeout=10)
+            resp = requests.get(base_url, headers=HEADERS, timeout=5)
             resp.encoding = 'utf-8'
-            if resp.status_code == 200:
-                self.base_url = resp.url.rstrip('/')
+            self.base_url = resp.url.rstrip('/')
         except:
-            pass
+            self.base_url = base_url.rstrip('/')
 
     def search(self, query, _type='movie', page=1):
         query = query.replace(' ', '+')
         url = f"{self.base_url}/search?q={query}&section={_type}&page={page}"
-        try:
-            resp = requests.get(url, headers=HEADERS, timeout=15)
-            resp.encoding = 'utf-8'
-        except:
-            return []
+        resp = requests.get(url, headers=HEADERS)
+        resp.encoding = 'utf-8'
         
         pattern = rf'({self.base_url}/{_type}/\d+/.*?)"'
         matches = re.findall(pattern, resp.text)
@@ -70,11 +63,8 @@ class AkwamAPI:
         return results
 
     def fetch_episodes(self, series_url):
-        try:
-            resp = requests.get(series_url, headers=HEADERS, timeout=15)
-            resp.encoding = 'utf-8'
-        except:
-            return []
+        resp = requests.get(series_url, headers=HEADERS)
+        resp.encoding = 'utf-8'
         pattern = rf'({self.base_url}/episode/\d+/.*?)"'
         matches = re.findall(pattern, resp.text)
         
@@ -94,11 +84,8 @@ class AkwamAPI:
         return episodes
 
     def get_qualities(self, url):
-        try:
-            resp = requests.get(url, headers=HEADERS, timeout=15)
-            resp.encoding = 'utf-8'
-        except:
-            return {}
+        resp = requests.get(url, headers=HEADERS)
+        resp.encoding = 'utf-8'
         page_content = resp.text.replace('\n', '')
         
         # Search for link/... identifiers inside quality blocks
@@ -115,43 +102,24 @@ class AkwamAPI:
     def resolve_link(self, short_url):
         if not short_url.startswith('http'):
             short_url = 'https://' + short_url
+        
+        # Step 1: Shortened Link -> Download Page
+        resp = requests.get(short_url, headers=HEADERS)
+        match1 = re.search(f'({RGX_SHORTEN_URL})', resp.text)
+        if not match1: return None
+        
+        target = match1.group(1).rstrip('"')
+        if not target.startswith('http'): target = 'https://' + target
+        
+        # Step 2: Download Page -> Final Direct Link
+        resp = requests.get(target, headers=HEADERS)
+        if resp.url != target:
+            resp = requests.get(resp.url, headers=HEADERS)
             
-        try:
-            # Step 1: Quality Link -> Intermediate Page
-            resp = requests.get(short_url, headers=HEADERS, timeout=15)
-            
-            # Potential next link (Intermediate or Final)
-            next_match = re.search(f'({RGX_SHORTEN_URL})', resp.text)
-            if not next_match:
-                # Fallback: check for final link directly
-                final_match = re.search(f'({RGX_DIRECT_URL})', resp.text)
-                if final_match:
-                    return final_match.group(1).rstrip('"')
-                return None
-                
-            target = next_match.group(1).rstrip('"')
-            if not target.startswith('http'): target = 'https://' + target
-            
-            # Step 2: Intermediate Page -> Final Page or Direct Link
-            resp = requests.get(target, headers=HEADERS, timeout=15)
-            
-            # Look for final link
-            final_match = re.search(f'({RGX_DIRECT_URL})', resp.text)
-            if final_match:
-                res = final_match.group(1).rstrip('"')
-                return res if res.startswith('http') else 'https://' + res
-            
-            # One more hop just in case
-            next_match2 = re.search(f'({RGX_SHORTEN_URL})', resp.text)
-            if next_match2 and next_match2.group(1) != target:
-                target2 = next_match2.group(1).rstrip('"')
-                resp = requests.get(target2, headers=HEADERS, timeout=15)
-                final_match2 = re.search(f'({RGX_DIRECT_URL})', resp.text)
-                if final_match2:
-                    res = final_match2.group(1).rstrip('"')
-                    return res if res.startswith('http') else 'https://' + res
-        except:
-            return None
+        match2 = re.search(f'({RGX_DIRECT_URL})', resp.text)
+        if match2:
+            final_url = match2.group(1).rstrip('"')
+            return final_url if final_url.startswith('http') else 'https://' + final_url
         return None
 
     def batch_resolve(self, series_id):
