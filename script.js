@@ -200,8 +200,12 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
 
             try {
-                // Fetch qualities
-                const qRes = await fetch(`/api/akwam?action=details&url=${encodeURIComponent(ep.url)}`);
+                // Fetch qualities with timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 60000); // 1 min timeout
+
+                const qRes = await fetch(`/api/akwam?action=details&url=${encodeURIComponent(ep.url)}`, { signal: controller.signal });
+                clearTimeout(timeoutId);
                 if (!qRes.ok) throw new Error(`HTTP Error ${qRes.status}`);
                 const qualities = await qRes.json();
 
@@ -294,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const resDiv = document.getElementById('resolve-result');
         if (!resDiv) return;
 
-        resDiv.innerHTML = '<p style="text-align:center; color:var(--secondary); animation: pulse 1s infinite">Resolving...</p>';
+        resDiv.innerHTML = '<p style="text-align:center; color:var(--accent); animation: btn-pulse 1.5s infinite">Resolving download link...</p>';
         try {
             const rRes = await fetch(`/api/akwam?action=resolve&url=${encodeURIComponent(url)}`);
             const data = await rRes.json();
