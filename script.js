@@ -155,109 +155,66 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btn) {
             btn.onclick = (e) => {
                 e.preventDefault();
-                startBatchDownload(episodes);
+                startBatchDownload(seriesUrl); // High-speed backend batching
             };
         }
     };
 
-    // --- BATCH PROCESSOR ---
-    window.startBatchDownload = async (episodes) => {
+    // --- BATCH PROCESSOR (BACKEND DRIVEN - HIGH SPEED) ---
+    window.startBatchDownload = async (seriesUrl) => {
         const btn = document.getElementById('batch-dl-btn');
         const progress = document.getElementById('batch-progress');
         const resultsBox = document.getElementById('batch-results');
 
-        if (!btn || !progress || !resultsBox) {
-            console.error("Batch elements missing");
-            return;
-        }
+        if (!btn || !progress || !resultsBox) return;
 
         btn.disabled = true;
         btn.classList.add('btn-processing');
-        btn.innerHTML = '<span class="loader" style="width:16px; height:16px; border-width:2px; vertical-align:middle; margin-right:8px"></span> RESOLVING EPISODES...';
+        btn.innerHTML = '<span class="loader" style="width:16px; height:16px; border-width:2px; vertical-align:middle; margin-right:8px"></span> RESOLVING ENTIRE SEASON...';
 
         progress.style.display = 'block';
-        resultsBox.style.display = 'block';
-        resultsBox.innerHTML = ''; // Clear previous results
-
-        const collectedLinks = [];
-        let completed = 0;
-        const total = episodes.length;
-
-        // SEQUENTIAL PROCESSING is more robust for Akwam
-        for (let i = 0; i < total; i++) {
-            const ep = episodes[i];
-
-            // Progress Bar UI Update
-            const percent = Math.round((i / total) * 100);
-            progress.innerHTML = `
-                <div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:0.9rem; color:var(--text-secondary)">
-                    <span>Processing Episode ${i + 1} of ${total}</span>
-                    <span>${percent}%</span>
-                </div>
+        progress.innerHTML = `
+            <div style="text-align:center; padding: 10px;">
+                <p style="color:var(--text-secondary); margin-bottom:12px; font-size:0.9rem;">
+                    Parallel resolving started... and should finish in 5-10s
+                </p>
                 <div style="height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden; border: 1px solid var(--border-subtle)">
-                    <div style="height:100%; width:${percent}%; background:var(--accent); transition:width 0.3s ease"></div>
+                    <div class="progress-bar-shimmer" style="height:100%; width:100%; background:var(--accent); opacity:0.6;"></div>
                 </div>
-            `;
+            </div>
+        `;
 
-            try {
-                // Fetch qualities with timeout
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 60000); // 1 min timeout
+        resultsBox.style.display = 'block';
+        resultsBox.innerHTML = '';
 
-                const qRes = await fetch(`/api/akwam?action=details&url=${encodeURIComponent(ep.url)}`, { signal: controller.signal });
-                clearTimeout(timeoutId);
-                if (!qRes.ok) throw new Error(`HTTP Error ${qRes.status}`);
-                const qualities = await qRes.json();
+        try {
+            const res = await fetch(`/api/akwam?action=batch&url=${encodeURIComponent(seriesUrl)}`);
+            const data = await res.json();
 
-                if (!qualities || Object.keys(qualities).length === 0) throw new Error("No qualities");
+            if (!data || data.length === 0) throw new Error("No links could be resolved.");
 
-                const qKeys = Object.keys(qualities);
-                let targetQ = qKeys.find(k => k.includes('720')) || qKeys[0];
-                let downloadPageUrl = qualities[targetQ];
-
-                const rRes = await fetch(`/api/akwam?action=resolve&url=${encodeURIComponent(downloadPageUrl)}`);
-                const rData = await rRes.json();
-
-                if (rData && rData.direct_url) {
-                    collectedLinks.push(rData.direct_url);
-
-                    const div = document.createElement('div');
-                    div.className = 'result-row fade-in';
-                    div.innerHTML = `
-                        <div class="row-info">
-                            <span class="row-title">${ep.title}</span>
-                            <span class="row-badge">${targetQ}</span>
-                        </div>
-                        <a href="${rData.direct_url}" target="_blank" class="row-btn">Download</a>
-                    `;
-                    resultsBox.prepend(div);
-                } else {
-                    throw new Error("No link found");
-                }
-            } catch (e) {
-                console.error(`Error resolving ${ep.title}:`, e);
+            const collectedLinks = [];
+            data.forEach(item => {
+                collectedLinks.push(item.url);
                 const div = document.createElement('div');
-                div.className = 'result-row fade-in error';
+                div.className = 'result-row fade-in';
                 div.innerHTML = `
                     <div class="row-info">
-                        <span class="row-title">${ep.title}</span>
+                        <span class="row-title">${item.title}</span>
+                        <span class="row-badge">${item.quality}</span>
                     </div>
-                    <span class="row-status">Failed - Try Manually</span>
+                    <a href="${item.url}" target="_blank" class="row-btn">Download</a>
                 `;
                 resultsBox.appendChild(div);
-            }
+            });
 
-            // Short delay to avoid rate trigger
-            await new Promise(r => setTimeout(r, 600));
-        }
+            btn.innerHTML = '✅ COMPLETED';
+            btn.classList.remove('btn-processing');
+            btn.classList.add('success');
 
-        btn.innerHTML = '✅ COMPLETED';
-        btn.classList.add('success');
-
-        if (collectedLinks.length > 0) {
             progress.innerHTML = `
                 <div style="background:rgba(74, 222, 128, 0.1); border:1px solid rgba(74, 222, 128, 0.2); padding:15px; border-radius:12px; margin-top:15px;">
-                    <p style="color:#4ade80; font-weight:600; margin-bottom:10px">🎉 ${collectedLinks.length} Links Ready</p>
+                    <p style="color:#4ade80; font-weight:600; margin-bottom:10px">🎉 Resolved ${collectedLinks.length} Episodes</p>
                     <button id="copy-all-btn" class="action-btn" style="width:100%; background:var(--primary); color:#000; font-weight:800; border:none">
                         📋 COPY ALL LINKS
                     </button>
@@ -266,15 +223,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             document.getElementById('copy-all-btn').onclick = function () {
                 navigator.clipboard.writeText(collectedLinks.join('\n'));
-                this.innerText = "✅ COPIED TO CLIPBOARD!";
-                this.style.background = "#4ade80";
-                setTimeout(() => {
-                    this.innerText = "📋 COPY ALL LINKS";
-                    this.style.background = "var(--primary)";
-                }, 2000);
+                this.innerText = "✅ COPIED!";
+                setTimeout(() => { this.innerText = "📋 COPY ALL LINKS"; }, 2000);
             };
-        } else {
-            progress.innerHTML = `<p style="color:#f87171; text-align:center; margin-top:10px">No valid links were found.</p>`;
+
+        } catch (error) {
+            btn.innerHTML = '❌ FAILED';
+            btn.disabled = false;
+            btn.classList.remove('btn-processing');
+            progress.innerHTML = `<p style="color:#f87171; text-align:center; margin-top:10px">Error: ${error.message}</p>`;
         }
     };
 
