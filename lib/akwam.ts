@@ -30,7 +30,10 @@ export class AkwamAPI {
             redirect: 'follow',
             headers: HEADERS
         });
-        this.baseUrl = res.url.replace(/\/$/, '');
+        // Use origin to avoid subpaths like /main
+        const urlObj = new URL(res.url);
+        this.baseUrl = urlObj.origin;
+        console.log(`[DEBUG] Initialized Base URL: ${this.baseUrl}`);
     }
 
     async search(query: string, type: 'movie' | 'series' = 'movie'): Promise<AkwamResult[]> {

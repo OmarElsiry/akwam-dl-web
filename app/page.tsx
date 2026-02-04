@@ -32,7 +32,15 @@ export default function Home() {
       const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&type=${type}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setResults(data);
+
+      if (Array.isArray(data)) {
+        setResults(data);
+      } else if (data.results) {
+        setResults(data.results);
+        if (data.results.length === 0 && data.debug) {
+          setError(`Debug: ${data.debug.message}`);
+        }
+      }
       setStep('results');
     } catch (err: any) {
       setError(err.message);
