@@ -1,13 +1,19 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
+const { wrapper } = require('axios-cookiejar-support');
+const { CookieJar } = require('tough-cookie');
 
-// Create axios instance with browser-like headers
-const client = axios.create({
-    timeout: 15000,
-    maxRedirects: 10,
+// Create a persistent cookie jar
+const jar = new CookieJar();
+
+// Create axios instance with cookie support and browser-like headers
+const client = wrapper(axios.create({
+    jar,
+    timeout: 20000,
+    maxRedirects: 15,
     headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
         'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
         'Accept-Encoding': 'gzip, deflate, br',
         'Connection': 'keep-alive',
@@ -15,28 +21,37 @@ const client = axios.create({
         'Sec-Fetch-Dest': 'document',
         'Sec-Fetch-Mode': 'navigate',
         'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1'
+        'Sec-Fetch-User': '?1',
+        'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'DNT': '1'
     }
-});
+}));
 
 class AkwamService {
     constructor() {
         this.baseUrl = null;
         this.HTTP = 'https://';
+        this.isInitialized = false;
     }
 
     async init() {
-        if (!this.baseUrl) {
+        if (!this.isInitialized) {
             try {
-                const response = await client.get('https://ak.sv/', {
-                    maxRedirects: 5,
-                    timeout: 10000
+                console.log('[AkwamService] Initializing session...');
+                // First visit the core domain to get initial cookies
+                const initialRes = await client.get('https://ak.sv/', {
+                    headers: { 'Sec-Fetch-Site': 'none' }
                 });
-                this.baseUrl = response.request.res.responseUrl.replace(/\/$/, '');
+
+                this.baseUrl = initialRes.request.res.responseUrl.replace(/\/$/, '');
                 console.log(`[AkwamService] Resolved base URL: ${this.baseUrl}`);
+                this.isInitialized = true;
             } catch (error) {
+                console.warn(`[AkwamService] Initialization warning: ${error.message}`);
                 this.baseUrl = 'https://ak.sv';
-                console.log(`[AkwamService] Using fallback URL: ${this.baseUrl}`);
+                this.isInitialized = true; // Still mark as initialized to avoid loops
             }
         }
         return this.baseUrl;
@@ -47,109 +62,141 @@ class AkwamService {
         const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(query)}&section=${type}&page=${page}`;
         console.log(`[AkwamService] Searching: ${searchUrl}`);
 
-        const { data } = await client.get(searchUrl, { timeout: 10000 });
+        try {
+            const { data } = await client.get(searchUrl, {
+                headers: {
+                    'Referer': `${baseUrl}/`,
+                    'Sec-Fetch-Site': 'same-origin'
+                }
+            });
 
-        // Python regex: ({self.url}/{self.type}/\d+/.*?)"
-        const regex = new RegExp(`(${baseUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/${type}/\\d+/[^"]+)"`, 'g');
-        const matches = [...data.matchAll(regex)];
+            // Match Python regex: ({self.url}/{self.type}/\d+/.*?)"
+            const domainPattern = baseUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/sv$/, '\\w+');
+            const regex = new RegExp(`(${domainPattern}/${type}/\\d+/[^"]+)"`, 'g');
+            const matches = [...data.matchAll(regex)];
 
-        const resultsMap = {};
-        matches.forEach(match => {
-            const url = match[1];
-            const slug = url.split('/').pop();
-            const title = slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-            if (!resultsMap[url]) {
-                resultsMap[url] = title;
+            const resultsMap = {};
+            matches.forEach(match => {
+                const url = match[1];
+                const slug = url.split('/').pop();
+                const title = decodeURIComponent(slug).replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                if (!resultsMap[url]) {
+                    resultsMap[url] = title;
+                }
+            });
+
+            const results = Object.entries(resultsMap).map(([url, title]) => ({ title, url })).reverse();
+
+            return {
+                query,
+                type,
+                page,
+                count: results.length,
+                results
+            };
+        } catch (error) {
+            console.error(`[AkwamService] Search error: ${error.message}`);
+            if (error.response && error.response.status === 403) {
+                throw new Error('Access Forbidden (403). Cloudflare may be blocking this request.');
             }
-        });
-
-        // Convert to array and reverse (Python does [::-1])
-        const results = Object.entries(resultsMap).map(([url, title]) => ({ title, url })).reverse();
-
-        return {
-            query,
-            type,
-            page,
-            count: results.length,
-            results
-        };
+            throw error;
+        }
     }
 
     async getEpisodes(seriesUrl) {
         const baseUrl = await this.init();
-        console.log(`[AkwamService] Fetching episodes: ${seriesUrl}`);
+        const safeUrl = new URL(seriesUrl).toString();
+        console.log(`[AkwamService] Fetching episodes: ${safeUrl}`);
 
-        const { data } = await client.get(seriesUrl, { timeout: 10000 });
+        try {
+            const { data, request } = await client.get(safeUrl, {
+                headers: {
+                    'Referer': `${baseUrl}/search`,
+                    'Sec-Fetch-Site': 'same-origin'
+                }
+            });
+            const finalBaseUrl = request.res.responseUrl.split('/').slice(0, 3).join('/');
 
-        // Python regex: ({self.url}/episode/\d+/.*?)"
-        const regex = new RegExp(`(${baseUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/episode/\\d+/[^"]+)"`, 'g');
-        const matches = [...data.matchAll(regex)];
+            const domainPattern = finalBaseUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`(${domainPattern}/episode/\\d+/[^"]+)"`, 'g');
+            const matches = [...data.matchAll(regex)];
 
-        const resultsMap = {};
-        matches.forEach(match => {
-            const url = match[1];
-            const slug = url.split('/').pop();
-            const title = slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-            if (!resultsMap[url]) {
-                resultsMap[url] = title;
-            }
-        });
+            const resultsMap = {};
+            matches.forEach(match => {
+                const url = match[1];
+                const slug = url.split('/').pop();
+                const title = decodeURIComponent(slug).replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                if (!resultsMap[url]) {
+                    resultsMap[url] = title;
+                }
+            });
 
-        const episodes = Object.entries(resultsMap).map(([url, title]) => ({ title, url })).reverse();
+            const episodes = Object.entries(resultsMap).map(([url, title]) => ({ title, url })).reverse();
 
-        return {
-            seriesUrl,
-            count: episodes.length,
-            episodes
-        };
+            return {
+                seriesUrl: safeUrl,
+                count: episodes.length,
+                episodes
+            };
+        } catch (error) {
+            console.error(`[AkwamService] Episodes error: ${error.message}`);
+            throw error;
+        }
     }
 
     async getQualities(itemUrl) {
         const baseUrl = await this.init();
         console.log(`[AkwamService] Fetching qualities: ${itemUrl}`);
 
-        const { data } = await client.get(itemUrl, { timeout: 10000 });
+        try {
+            const { data } = await client.get(itemUrl, {
+                headers: {
+                    'Referer': baseUrl,
+                    'Sec-Fetch-Site': 'same-origin'
+                }
+            });
 
-        // Python regexes
-        const RGX_QUALITY_TAG = /tab-content quality.*?a href="(https?:\/\/[\w.*]+\.[\w]+\/link\/\d+)"/g;
-        const RGX_SIZE_TAG = /font-size-14 mr-auto">([0-9.MGB ]+)<\//g;
+            const RGX_QUALITY_TAG = /tab-content quality.*?a href="(https?:\/\/[\w.*]+\.[\w]+\/link\/\d+)"/g;
+            const RGX_SIZE_TAG = /font-size-14 mr-auto">([0-9.MGB ]+)<\//g;
 
-        // Remove newlines for matching (Python does no_multi_line=True)
-        const cleanData = data.replace(/\n/g, '');
+            const cleanData = data.replace(/\n/g, '');
+            const qualityLinks = [...cleanData.matchAll(RGX_QUALITY_TAG)];
+            const sizes = [...cleanData.matchAll(RGX_SIZE_TAG)];
 
-        const qualityLinks = [...cleanData.matchAll(RGX_QUALITY_TAG)];
-        const sizes = [...cleanData.matchAll(RGX_SIZE_TAG)];
+            const qualities = [];
+            const qualityNames = ['1080p', '720p', '480p'];
+            let i = 0;
 
-        const qualities = [];
-        const qualityNames = ['1080p', '720p', '480p'];
-        let i = 0;
+            qualityNames.forEach(q => {
+                if (cleanData.includes(`>${q}</`)) {
+                    qualities.push({
+                        quality: q,
+                        link: qualityLinks[i] ? qualityLinks[i][1] : null,
+                        size: sizes[i] ? sizes[i][1].trim() : null
+                    });
+                    i++;
+                }
+            });
 
-        qualityNames.forEach(q => {
-            if (cleanData.includes(`>${q}</`)) {
-                qualities.push({
-                    quality: q,
-                    link: qualityLinks[i] ? qualityLinks[i][1] : null,
-                    size: sizes[i] ? sizes[i][1].trim() : null
-                });
-                i++;
-            }
-        });
-
-        return {
-            itemUrl,
-            count: qualities.length,
-            qualities
-        };
+            return {
+                itemUrl,
+                count: qualities.length,
+                qualities
+            };
+        } catch (error) {
+            console.error(`[AkwamService] Qualities error: ${error.message}`);
+            throw error;
+        }
     }
 
     async getDirectUrl(qualityLink) {
         console.log(`[AkwamService] Resolving direct URL: ${qualityLink}`);
 
         try {
-            // Step 1: Get the shortened URL page
-            const res1 = await client.get(qualityLink, { timeout: 15000 });
+            const res1 = await client.get(qualityLink, {
+                headers: { 'Sec-Fetch-Site': 'cross-site' }
+            });
 
-            // Python regex: RGX_SHORTEN_URL = r'https?://(\w*\.*\w+\.\w+/download/.*?)"'
             const shortenMatch = res1.data.match(/https?:\/\/([\w.*]+\.[\w]+\/download\/[^"]+)"/);
 
             if (!shortenMatch) {
@@ -163,19 +210,16 @@ class AkwamService {
             const shortenUrl = this.HTTP + shortenMatch[1];
             console.log(`[AkwamService] Found shorten URL: ${shortenUrl}`);
 
-            // Step 2: Follow the shortened URL
-            const res2 = await client.get(shortenUrl, { timeout: 15000 });
+            const res2 = await client.get(shortenUrl);
             let finalPage = res2.data;
             let finalUrl = res2.request.res.responseUrl;
 
-            // If redirected, follow it
             if (shortenUrl !== finalUrl) {
-                console.log(`[AkwamService] Redirected to: ${finalUrl}`);
-                const res3 = await client.get(finalUrl, { timeout: 15000 });
+                console.log(`[AkwamService] Followed redirect to: ${finalUrl}`);
+                const res3 = await client.get(finalUrl);
                 finalPage = res3.data;
             }
 
-            // Python regex: RGX_DIRECT_URL = r'([a-z0-9]{4,}\.\w+\.\w+/download/.*?)"'
             const directMatch = finalPage.match(/([a-z0-9]{4,}\.[\w]+\.[\w]+\/download\/[^"]+)"/);
 
             if (directMatch) {
@@ -187,11 +231,12 @@ class AkwamService {
 
             return {
                 success: false,
-                error: 'Could not extract direct URL (server may be blocking)',
+                error: 'Could not extract direct URL (server link expired or protection active)',
                 fallbackUrl: shortenUrl
             };
 
         } catch (error) {
+            console.error(`[AkwamService] Direct link error: ${error.message}`);
             return {
                 success: false,
                 error: error.message,
@@ -201,17 +246,12 @@ class AkwamService {
     }
 
     async getAllEpisodeLinks(seriesUrl, quality = '720p') {
-        console.log(`[AkwamService] Getting all episode links for: ${seriesUrl}`);
-
         const { episodes } = await this.getEpisodes(seriesUrl);
         const results = [];
 
         for (const episode of episodes) {
             try {
-                console.log(`[AkwamService] Processing: ${episode.title}`);
                 const { qualities } = await this.getQualities(episode.url);
-
-                // Find requested quality or fallback to first available
                 let qualityInfo = qualities.find(q => q.quality === quality) || qualities[0];
 
                 if (qualityInfo && qualityInfo.link) {
