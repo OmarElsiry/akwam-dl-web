@@ -1,129 +1,334 @@
-const API_URL = '/api';
+// Akwam-DL Frontend Application
 
-const searchInput = document.getElementById('searchInput');
-const typeSelect = document.getElementById('typeSelect');
-const resultsDiv = document.getElementById('results');
-const detailsDiv = document.getElementById('details');
-const loader = document.getElementById('loader');
+const API_BASE = '';  // Same origin
 
-// Add Enter key support
+// State
+let currentType = 'movie';
+let currentResults = [];
+let currentSeriesUrl = '';
+
+// DOM Elements
+const searchInput = document.getElementById('search-input');
+const searchBtn = document.getElementById('search-btn');
+const movieBtn = document.getElementById('btn-movie');
+const seriesBtn = document.getElementById('btn-series');
+const resultsSection = document.getElementById('results-section');
+const resultsList = document.getElementById('results-list');
+const resultsCount = document.getElementById('results-count');
+const episodesSection = document.getElementById('episodes-section');
+const episodesList = document.getElementById('episodes-list');
+const seriesTitle = document.getElementById('series-title');
+const qualitiesSection = document.getElementById('qualities-section');
+const qualitiesList = document.getElementById('qualities-list');
+const movieTitle = document.getElementById('movie-title');
+const downloadSection = document.getElementById('download-section');
+const downloadList = document.getElementById('download-list');
+const qualitySelect = document.getElementById('quality-select');
+const getAllBtn = document.getElementById('get-all-btn');
+const backToResults = document.getElementById('back-to-results');
+const backToResults2 = document.getElementById('back-to-results-2');
+const backToEpisodes = document.getElementById('back-to-episodes');
+const loading = document.getElementById('loading');
+const errorMessage = document.getElementById('error-message');
+
+// Event Listeners
+movieBtn.addEventListener('click', () => setType('movie'));
+seriesBtn.addEventListener('click', () => setType('series'));
+searchBtn.addEventListener('click', search);
 searchInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') performSearch();
+    if (e.key === 'Enter') search();
 });
+backToResults.addEventListener('click', showResults);
+backToResults2.addEventListener('click', showResults);
+backToEpisodes.addEventListener('click', () => {
+    hideAllSections();
+    episodesSection.classList.remove('hidden');
+});
+getAllBtn.addEventListener('click', getAllEpisodes);
 
-function showLoader() {
-    loader.style.display = 'flex';
-    resultsDiv.style.opacity = '0.5';
+// Functions
+function setType(type) {
+    currentType = type;
+    movieBtn.classList.toggle('active', type === 'movie');
+    seriesBtn.classList.toggle('active', type === 'series');
 }
 
-function hideLoader() {
-    loader.style.display = 'none';
-    resultsDiv.style.opacity = '1';
+function showLoading() {
+    loading.classList.remove('hidden');
+    hideError();
 }
 
-async function performSearch() {
+function hideLoading() {
+    loading.classList.add('hidden');
+}
+
+function showError(message) {
+    errorMessage.textContent = message;
+    errorMessage.classList.remove('hidden');
+}
+
+function hideError() {
+    errorMessage.classList.add('hidden');
+}
+
+function hideAllSections() {
+    resultsSection.classList.add('hidden');
+    episodesSection.classList.add('hidden');
+    qualitiesSection.classList.add('hidden');
+    downloadSection.classList.add('hidden');
+}
+
+function showResults() {
+    hideAllSections();
+    resultsSection.classList.remove('hidden');
+}
+
+async function search() {
     const query = searchInput.value.trim();
     if (!query) return;
 
-    showLoader();
-    resultsDiv.innerHTML = '';
-    detailsDiv.innerHTML = '';
+    hideAllSections();
+    showLoading();
+    hideError();
 
     try {
-        const response = await fetch(`${API_URL}/search?q=${encodeURIComponent(query)}&section=${typeSelect.value}`);
+        const response = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(query)}&type=${currentType}`);
         const data = await response.json();
 
-        if (data.length === 0) {
-            resultsDiv.innerHTML = '<p style="text-align:center; grid-column: 1/-1;">No results found.</p>';
-        } else {
-            data.forEach(item => {
-                const card = document.createElement('div');
-                card.className = 'card';
-                card.innerHTML = `
-                    <div class="card-body">
-                        <div class="card-title">${item.title}</div>
-                    </div>
-                `;
-                card.onclick = () => loadDetails(item.url, typeSelect.value);
-                resultsDiv.appendChild(card);
-            });
+        if (data.error) {
+            throw new Error(data.error);
         }
+
+        currentResults = data.results;
+        displayResults(data);
     } catch (error) {
-        console.error('Error:', error);
-        resultsDiv.innerHTML = `<p style="text-align:center; color:red; grid-column: 1/-1;">Error: ${error.message}</p>`;
+        showError(`Search failed: ${error.message}`);
     } finally {
-        hideLoader();
+        hideLoading();
     }
 }
 
-async function loadDetails(url, type) {
-    showLoader();
-    detailsDiv.innerHTML = '';
-    resultsDiv.style.display = 'none'; // Hide results to focus on details
+function displayResults(data) {
+    resultsList.innerHTML = '';
+    resultsCount.textContent = `(${data.count} results)`;
 
-    try {
-        // Add "Back" button
-        detailsDiv.innerHTML = `<button onclick="goBack()" style="margin-bottom:20px; background:#6c757d;">&larr; Back to Results</button>`;
+    if (data.results.length === 0) {
+        resultsList.innerHTML = '<p class="no-results">No results found</p>';
+        resultsSection.classList.remove('hidden');
+        return;
+    }
 
-        if (type === 'movie') {
-            const response = await fetch(`${API_URL}/qualities?url=${encodeURIComponent(url)}`);
-            const qualities = await response.json();
+    data.results.forEach((item, index) => {
+        const div = document.createElement('div');
+        div.className = 'result-item';
+        div.innerHTML = `
+            <div>
+                <div class="title">${index + 1}. ${item.title}</div>
+                <div class="url">${item.url}</div>
+            </div>
+            <span>→</span>
+        `;
+        div.addEventListener('click', () => selectResult(item));
+        resultsList.appendChild(div);
+    });
 
-            const list = document.createElement('div');
-            qualities.forEach(q => {
-                const item = document.createElement('div');
-                item.className = 'episode-item';
-                item.innerHTML = `<span>${q.quality} - ${q.size}</span> <span>Download &rarr;</span>`;
-                item.onclick = () => resolveLink(q.link, item);
-                list.appendChild(item);
-            });
-            detailsDiv.appendChild(list);
-        } else {
-            const response = await fetch(`${API_URL}/episodes?url=${encodeURIComponent(url)}`);
-            const episodes = await response.json();
+    resultsSection.classList.remove('hidden');
+}
 
-            const list = document.createElement('div');
-            episodes.forEach(ep => {
-                const item = document.createElement('div');
-                item.className = 'episode-item';
-                item.innerHTML = `<span>${ep.title}</span> <span>Select &rarr;</span>`;
-                item.onclick = () => loadDetails(ep.url, 'movie'); // Recursively treat episode as a movie to get qualities
-                list.appendChild(item);
-            });
-            detailsDiv.appendChild(list);
-        }
-    } catch (error) {
-        detailsDiv.innerHTML += `<p style="color:red">Error loading details</p>`;
-    } finally {
-        hideLoader();
+async function selectResult(item) {
+    if (currentType === 'series') {
+        await loadEpisodes(item);
+    } else {
+        await loadQualities(item);
     }
 }
 
-async function resolveLink(url, element) {
-    const originalText = element.innerHTML;
-    element.innerHTML = `<span>Resolution in progress...</span> <div class="loader" style="width:20px; height:20px; border-width:2px;"></div>`;
-    element.style.pointerEvents = 'none';
+async function loadEpisodes(series) {
+    hideAllSections();
+    showLoading();
 
     try {
-        const response = await fetch(`${API_URL}/resolve?url=${encodeURIComponent(url)}`);
+        currentSeriesUrl = series.url;
+        seriesTitle.textContent = series.title;
+
+        const response = await fetch(`${API_BASE}/api/episodes?url=${encodeURIComponent(series.url)}`);
         const data = await response.json();
 
-        if (data.directLink) {
-            window.open(data.directLink, '_blank');
-            element.innerHTML = `<span>Resolution Complete!</span> <span style="color:green;">Opened</span>`;
-        } else {
-            throw new Error('No link found');
+        if (data.error) {
+            throw new Error(data.error);
         }
+
+        displayEpisodes(data);
     } catch (error) {
-        element.innerHTML = `<span>Error resolving link</span> <span style="color:red;">Failed</span>`;
-        setTimeout(() => {
-            element.innerHTML = originalText;
-            element.style.pointerEvents = 'auto';
-        }, 2000);
+        showError(`Failed to load episodes: ${error.message}`);
+        showResults();
+    } finally {
+        hideLoading();
     }
 }
 
-function goBack() {
-    detailsDiv.innerHTML = '';
-    resultsDiv.style.display = 'grid';
+function displayEpisodes(data) {
+    episodesList.innerHTML = '';
+
+    if (data.episodes.length === 0) {
+        episodesList.innerHTML = '<p class="no-results">No episodes found</p>';
+        episodesSection.classList.remove('hidden');
+        return;
+    }
+
+    data.episodes.forEach((ep, index) => {
+        const div = document.createElement('div');
+        div.className = 'episode-item';
+        div.innerHTML = `
+            <div>
+                <div class="title">${index + 1}. ${ep.title}</div>
+            </div>
+            <span>→</span>
+        `;
+        div.addEventListener('click', () => loadEpisodeQualities(ep));
+        episodesList.appendChild(div);
+    });
+
+    episodesSection.classList.remove('hidden');
+}
+
+async function loadQualities(item) {
+    hideAllSections();
+    showLoading();
+
+    try {
+        movieTitle.textContent = item.title;
+
+        const response = await fetch(`${API_BASE}/api/qualities?url=${encodeURIComponent(item.url)}`);
+        const data = await response.json();
+
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        displayQualities(data);
+    } catch (error) {
+        showError(`Failed to load qualities: ${error.message}`);
+        showResults();
+    } finally {
+        hideLoading();
+    }
+}
+
+async function loadEpisodeQualities(episode) {
+    hideAllSections();
+    showLoading();
+
+    try {
+        movieTitle.textContent = episode.title;
+
+        const response = await fetch(`${API_BASE}/api/qualities?url=${encodeURIComponent(episode.url)}`);
+        const data = await response.json();
+
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        displayQualities(data, true);
+    } catch (error) {
+        showError(`Failed to load qualities: ${error.message}`);
+        episodesSection.classList.remove('hidden');
+    } finally {
+        hideLoading();
+    }
+}
+
+function displayQualities(data, isEpisode = false) {
+    qualitiesList.innerHTML = '';
+
+    // Adjust back button behavior
+    backToResults2.textContent = isEpisode ? '← Back to Episodes' : '← Back to Results';
+    backToResults2.onclick = isEpisode ? () => {
+        hideAllSections();
+        episodesSection.classList.remove('hidden');
+    } : showResults;
+
+    if (data.qualities.length === 0) {
+        qualitiesList.innerHTML = '<p class="no-results">No quality options found</p>';
+        qualitiesSection.classList.remove('hidden');
+        return;
+    }
+
+    data.qualities.forEach((q) => {
+        const div = document.createElement('div');
+        div.className = 'quality-item';
+        div.innerHTML = `
+            <div class="quality-info">
+                <span class="quality-badge">${q.quality}</span>
+                <span class="size">${q.size || 'Unknown size'}</span>
+            </div>
+            <a href="${q.link}" target="_blank" rel="noopener noreferrer">Open Link</a>
+        `;
+        qualitiesList.appendChild(div);
+    });
+
+    qualitiesSection.classList.remove('hidden');
+}
+
+async function getAllEpisodes() {
+    if (!currentSeriesUrl) return;
+
+    hideAllSections();
+    showLoading();
+
+    const quality = qualitySelect.value;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/all-episodes?url=${encodeURIComponent(currentSeriesUrl)}&quality=${quality}`);
+        const data = await response.json();
+
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        displayAllDownloads(data);
+    } catch (error) {
+        showError(`Failed to get all episodes: ${error.message}`);
+        episodesSection.classList.remove('hidden');
+    } finally {
+        hideLoading();
+    }
+}
+
+function displayAllDownloads(data) {
+    downloadList.innerHTML = '';
+    backToEpisodes.textContent = '← Back to Episodes';
+
+    if (data.episodes.length === 0) {
+        downloadList.innerHTML = '<p class="no-results">No downloads found</p>';
+        downloadSection.classList.remove('hidden');
+        return;
+    }
+
+    data.episodes.forEach((ep, index) => {
+        const div = document.createElement('div');
+        div.className = 'download-item';
+
+        let linksHtml = '';
+        if (ep.success && ep.directUrl) {
+            linksHtml = `<a href="${ep.directUrl}" class="success" target="_blank">Direct Download (${ep.quality})</a>`;
+        } else if (ep.fallbackUrl) {
+            linksHtml = `<a href="${ep.fallbackUrl}" class="warning" target="_blank">Fallback Link (${ep.quality})</a>`;
+            if (ep.error) {
+                linksHtml += `<span class="error">${ep.error}</span>`;
+            }
+        } else {
+            linksHtml = `<span class="error">${ep.error || 'No link available'}</span>`;
+        }
+
+        div.innerHTML = `
+            <div class="title">${index + 1}. ${ep.title}</div>
+            <div class="links">
+                ${linksHtml}
+            </div>
+        `;
+        downloadList.appendChild(div);
+    });
+
+    downloadSection.classList.remove('hidden');
 }
