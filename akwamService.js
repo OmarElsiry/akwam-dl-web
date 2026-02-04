@@ -4,13 +4,18 @@ const cheerio = require('cheerio');
 class AkwamService {
     constructor() {
         this.baseUrl = null;
-        // The "Secret Sauce": Impersonating Googlebot often bypasses Cloudflare challenges
         this.headers = {
-            'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
             'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive'
+            'Connection': 'keep-alive',
+            'Referer': 'https://ak.sv/',
+            'Origin': 'https://ak.sv',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-User': '?1'
         };
     }
 
@@ -23,9 +28,7 @@ class AkwamService {
                     headers: this.headers
                 });
                 this.baseUrl = response.request.res.responseUrl.replace(/\/$/, '');
-                console.log(`Resolved Akwam Base URL: ${this.baseUrl}`);
             } catch (err) {
-                console.error('Init failed, using default');
                 this.baseUrl = 'https://ak.sv';
             }
         }
@@ -36,31 +39,29 @@ class AkwamService {
         const baseUrl = await this.init();
         const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(query)}&section=${type}`;
 
-        const { data } = await axios.get(searchUrl, { headers: this.headers });
-        const $ = cheerio.load(data);
-        const results = [];
+        try {
+            const { data } = await axios.get(searchUrl, {
+                headers: { ...this.headers, 'Referer': `${baseUrl}/` }
+            });
+            const $ = cheerio.load(data);
+            const results = [];
+            const regex = new RegExp([baseUrl, type, '\\d+', '.*?'].join('/'));
 
-        const regexArr = [baseUrl, type, '\\d+', '.*?'].join('/');
-        const regex = new RegExp(regexArr);
-
-        $('a').each((i, el) => {
-            const href = $(el).attr('href');
-            if (href && (regex.test(href) || href.includes(`/${type}/`))) {
-                const item = $(el).closest('.col-12, .col-6, .col-4, .col-3, .item');
-                let title = '';
-                if (item.length) {
-                    title = item.find('h3, h2, .entry-title').text().trim();
+            $('a').each((i, el) => {
+                const href = $(el).attr('href');
+                if (href && (regex.test(href) || href.includes(`/${type}/`))) {
+                    const item = $(el).closest('.col-12, .col-6, .col-4, .col-3, .item');
+                    let title = item.find('h3, h2, .entry-title').text().trim() || $(el).text().trim() || href.split('/').pop().replace(/-/g, ' ');
+                    if (!results.find(r => r.url === href) && title.length > 2) {
+                        results.push({ title, url: href });
+                    }
                 }
-                if (!title) {
-                    title = $(el).text().trim() || href.split('/').pop().replace(/-/g, ' ');
-                }
-                if (!results.find(r => r.url === href) && title.length > 2) {
-                    results.push({ title, url: href });
-                }
-            }
-        });
-
-        return results;
+            });
+            return results;
+        } catch (err) {
+            if (err.response?.status === 403) throw new Error('Cloudflare Blocked Vercel IP. Try running locally or use a Proxy.');
+            throw err;
+        }
     }
 
     async getEpisodes(seriesUrl) {
@@ -68,20 +69,13 @@ class AkwamService {
         const $ = cheerio.load(data);
         const episodes = [];
         const baseUrl = await this.init();
-
-        const regexArr = [baseUrl, 'episode', '\\d+', '.*?'].join('/');
-        const regex = new RegExp(regexArr);
-
         $('a').each((i, el) => {
             const href = $(el).attr('href');
-            if (href && (regex.test(href) || href.includes('/episode/'))) {
+            if (href && href.includes('/episode/')) {
                 const title = $(el).text().trim() || href.split('/').pop().replace(/-/g, ' ');
-                if (!episodes.find(e => e.url === href)) {
-                    episodes.push({ title, url: href });
-                }
+                if (!episodes.find(e => e.url === href)) episodes.push({ title, url: href });
             }
         });
-
         return episodes.reverse();
     }
 
@@ -89,21 +83,16 @@ class AkwamService {
         const { data } = await axios.get(itemUrl, { headers: this.headers });
         const $ = cheerio.load(data);
         const qualities = [];
-
         $('.quality-item, .download-item, a[href*="/link/"]').each((i, el) => {
             const href = $(el).attr('href') || $(el).find('a').attr('href');
-            const qualityText = $(el).text().trim();
-            const size = $(el).find('.font-size-14').text().trim();
-
             if (href && href.includes('/link/')) {
                 qualities.push({
-                    quality: qualityText.match(/\d+p/)?.[0] || 'HD',
+                    quality: $(el).text().trim().match(/\d+p/)?.[0] || 'HD',
                     link: href,
-                    size: size
+                    size: $(el).find('.font-size-14').text().trim()
                 });
             }
         });
-
         return qualities;
     }
 
@@ -115,26 +104,10 @@ class AkwamService {
             const href = $1(el).attr('href');
             if (href && href.includes('/download/')) shortenUrl = href;
         });
-
-        if (!shortenUrl) throw new Error('Could not find intermediate download link');
-
+        if (!shortenUrl) throw new Error('Download gate blocked resolution.');
         const res2 = await axios.get(shortenUrl, { headers: this.headers });
-        const $2 = cheerio.load(res2.data);
-        let directLink = '';
-        $2('a').each((i, el) => {
-            const href = $2(el).attr('href');
-            if (href && href.includes('/download/') && !href.includes(shortenUrl)) {
-                directLink = href;
-            }
-        });
-
-        if (!directLink) {
-            const scriptContent = res2.data;
-            const match = scriptContent.match(/window\.location\.href\s*=\s*"(.*?)"/);
-            if (match) directLink = match[1];
-        }
-
-        return directLink || shortenUrl;
+        const match = res2.data.match(/window\.location\.href\s*=\s*"(.*?)"/);
+        return match ? match[1] : shortenUrl;
     }
 }
 
