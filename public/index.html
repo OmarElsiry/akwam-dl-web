@@ -4,77 +4,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Akwam-DL | Premium Media Downloader</title>
-    <meta name="description"
-        content="Download your favorite movies and series from Akwam with ease. Fast, free, and premium experience.">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <title>Akwam Downloader</title>
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-    <div id="app">
+    <div class="container">
         <header>
-            <div class="container">
-                <h1 class="logo">AKWAM-<span>DL</span></h1>
-                <p class="subtitle">Premium Stream & Download Utility</p>
-            </div>
+            <h1>Akwam DL</h1>
+            <p>Simple, Fast, and Direct</p>
         </header>
 
-        <main class="container">
-            <section class="search-section">
-                <div class="search-box">
-                    <select id="type-select">
-                        <option value="movie">Movies</option>
-                        <option value="series">Series</option>
-                    </select>
-                    <input type="text" id="search-input" placeholder="Search for movies or series...">
-                    <button id="search-btn">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="11" cy="11" r="8"></circle>
-                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                        </svg>
-                    </button>
-                </div>
-            </section>
-
-            <section id="results-section" class="results-grid"></section>
-
-            <section id="episodes-section" class="episodes-container hidden">
-                <button id="back-to-results" class="back-btn">← Back to Results</button>
-                <h2 id="episodes-title">Episodes</h2>
-                <div id="episodes-grid" class="episodes-grid"></div>
-            </section>
-
-            <div id="modal" class="modal hidden">
-                <div class="modal-content">
-                    <span class="close-modal">&times;</span>
-                    <h3 id="modal-title">Select Quality</h3>
-                    <div id="quality-list" class="quality-list"></div>
-                    <div id="direct-link-container" class="direct-link-container hidden">
-                        <p>Direct Download URL:</p>
-                        <div class="url-copy-box">
-                            <input type="text" id="direct-url" readonly>
-                            <button id="copy-btn">Copy</button>
-                        </div>
-                        <a id="download-anchor" class="download-btn-premium" target="_blank">Download Now</a>
-                    </div>
-                </div>
+        <section class="search-section">
+            <div class="input-group">
+                <input type="text" id="searchInput" placeholder="Search for Movie or Series...">
+                <select id="typeSelect">
+                    <option value="movie">Movie</option>
+                    <option value="series">Series</option>
+                </select>
+                <button id="searchBtn">Search</button>
             </div>
+        </section>
+
+        <main id="resultsArea">
+            <!-- Results will appear here -->
+            <div id="loader" class="hidden">Loading...</div>
+            <div id="resultsList"></div>
         </main>
 
-        <footer>
-            <p>&copy; 2024 Akwam-DL. Enhanced with modern JS.</p>
-        </footer>
+        <div id="detailView" class="hidden">
+            <button id="backBtn">← Back</button>
+            <h2 id="detailTitle"></h2>
+            <div id="detailContent"></div>
+        </div>
     </div>
 
-    <div id="loader" class="loader-overlay hidden">
-        <div class="spinner"></div>
-    </div>
-
-    <script src="script.js"></script>
+    <script src="app.js"></script>
 </body>
 
 </html>
