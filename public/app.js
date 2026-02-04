@@ -94,13 +94,13 @@ function renderQualities(qualities) {
         li.className = 'quality-item';
         li.innerHTML = `
             <span><strong>${q.quality}</strong> (${q.size})</span>
-            <button class="dl-btn" onclick="resolveLink('${q.link}')">Get Direct Link</button>
+            <button class="dl-btn" onclick="resolveLink(event, '${q.link}')">Get Direct Link</button>
         `;
         list.appendChild(li);
     });
 }
 
-async function resolveLink(link) {
+async function resolveLink(event, link) {
     const btn = event.target;
     const originalText = btn.innerText;
     btn.innerText = 'Resolving...';
