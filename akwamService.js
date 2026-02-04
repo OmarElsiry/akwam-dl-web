@@ -1,6 +1,5 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
-const wrapper = require('axios-cookiejar-support').wrapper;
 const { CookieJar } = require('tough-cookie');
 const { HttpProxyAgent } = require('http-proxy-agent');
 const { HttpsProxyAgent } = require('https-proxy-agent');
@@ -51,7 +50,7 @@ class ProxyManager {
         const isHttps = proxyUrl.startsWith('https');
         return isHttps
             ? { httpsAgent: new HttpsProxyAgent(proxyUrl) }
-            : { httpAgent: new HttpProxyAgent(proxyUrl), httpsAgent: new HttpsProxyAgent(proxyUrl) }; // HttpsAgent for the target even if proxy is http
+            : { httpAgent: new HttpProxyAgent(proxyUrl), httpsAgent: new HttpsProxyAgent(proxyUrl) };
     }
 }
 
@@ -66,41 +65,50 @@ class AkwamService {
     }
 
     /**
-     * Internal request wrapper with proxy support and retry logic
+     * Internal request wrapper with manual cookie handling, proxy support, and retry logic
      */
     async request(url, options = {}, retries = 2) {
         try {
-            const config = { ...options };
+            const config = {
+                ...options,
+                headers: { ...options.headers }
+            };
 
-            // Apply proxy if we have one or if it's a retry
+            // 1. Manually add cookies from the jar
+            const cookieString = await jar.getCookieString(url);
+            if (cookieString) {
+                config.headers['Cookie'] = cookieString;
+            }
+
+            // 2. Apply proxy agents
             if (this.currentProxy) {
                 const agents = proxyManager.getAgent(this.currentProxy);
                 Object.assign(config, agents);
             }
 
-            const clientInstance = wrapper(axios.create({
-                jar,
-                timeout: 30000,
-                maxRedirects: 15,
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                    'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
-                    'Sec-Fetch-Dest': 'document',
-                    'Sec-Fetch-Mode': 'navigate',
-                    'Sec-Fetch-Site': 'none',
-                    'Sec-Ch-Ua-Platform': '"Windows"',
-                    ...options.headers
-                }
-            }));
+            // Standard headers
+            config.headers['User-Agent'] = config.headers['User-Agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
+            config.headers['Accept'] = config.headers['Accept'] || 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7';
+            config.headers['Accept-Language'] = config.headers['Accept-Language'] || 'en-US,en;q=0.9,ar;q=0.8';
+            config.headers['Connection'] = 'keep-alive';
+            config.timeout = 30000;
+            config.maxRedirects = 15;
 
-            return await clientInstance.get(url, config);
+            const response = await axios.get(url, config);
+
+            // 3. Manually store received cookies in the jar
+            const setCookie = response.headers['set-cookie'];
+            if (setCookie) {
+                for (const cookie of setCookie) {
+                    await jar.setCookie(cookie, url);
+                }
+            }
+
+            return response;
         } catch (error) {
             const is403 = error.response && error.response.status === 403;
 
-            if ((is403 || error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') && retries > 0) {
+            if ((is403 || error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') && retries > 0) {
                 console.log(`[AkwamService] Request failed (${error.message}). Retrying with new proxy...`);
                 this.currentProxy = await proxyManager.getProxy();
                 return this.request(url, options, retries - 1);
