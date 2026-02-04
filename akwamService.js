@@ -4,20 +4,30 @@ const cheerio = require('cheerio');
 class AkwamService {
     constructor() {
         this.baseUrl = null;
+        // The "Secret Sauce": Impersonating Googlebot often bypasses Cloudflare challenges
+        this.headers = {
+            'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive'
+        };
     }
 
     async init() {
         if (!this.baseUrl) {
-            const response = await axios.get('https://ak.sv/', {
-                maxRedirects: 5,
-                validateStatus: null,
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                }
-            });
-            // Akwam often redirects to the current working domain
-            this.baseUrl = response.request.res.responseUrl.replace(/\/$/, '');
-            console.log(`Resolved Akwam Base URL: ${this.baseUrl}`);
+            try {
+                const response = await axios.get('https://ak.sv/', {
+                    maxRedirects: 5,
+                    validateStatus: null,
+                    headers: this.headers
+                });
+                this.baseUrl = response.request.res.responseUrl.replace(/\/$/, '');
+                console.log(`Resolved Akwam Base URL: ${this.baseUrl}`);
+            } catch (err) {
+                console.error('Init failed, using default');
+                this.baseUrl = 'https://ak.sv';
+            }
         }
         return this.baseUrl;
     }
@@ -26,45 +36,25 @@ class AkwamService {
         const baseUrl = await this.init();
         const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(query)}&section=${type}`;
 
-        const { data } = await axios.get(searchUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
-                'Cache-Control': 'max-age=0',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1'
-            }
-        });
+        const { data } = await axios.get(searchUrl, { headers: this.headers });
         const $ = cheerio.load(data);
         const results = [];
 
-        // Akwam typically has items in a grid or list.
-        // The python script used regex: (base_url/type/id/slug)
         const regexArr = [baseUrl, type, '\\d+', '.*?'].join('/');
         const regex = new RegExp(regexArr);
 
         $('a').each((i, el) => {
             const href = $(el).attr('href');
-            if (href && regex.test(href)) {
-                // To get the title, we can look for a nested title class or use text
-                const item = $(el).closest('.col-12, .col-6, .col-4, .col-3, .item'); // Common grid classes
+            if (href && (regex.test(href) || href.includes(`/${type}/`))) {
+                const item = $(el).closest('.col-12, .col-6, .col-4, .col-3, .item');
                 let title = '';
-
                 if (item.length) {
                     title = item.find('h3, h2, .entry-title').text().trim();
                 }
-
                 if (!title) {
                     title = $(el).text().trim() || href.split('/').pop().replace(/-/g, ' ');
                 }
-
-                // Avoid duplicates
-                if (!results.find(r => r.url === href)) {
+                if (!results.find(r => r.url === href) && title.length > 2) {
                     results.push({ title, url: href });
                 }
             }
@@ -74,20 +64,7 @@ class AkwamService {
     }
 
     async getEpisodes(seriesUrl) {
-        const { data } = await axios.get(seriesUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
-                'Cache-Control': 'max-age=0',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1'
-            }
-        });
+        const { data } = await axios.get(seriesUrl, { headers: this.headers });
         const $ = cheerio.load(data);
         const episodes = [];
         const baseUrl = await this.init();
@@ -97,7 +74,7 @@ class AkwamService {
 
         $('a').each((i, el) => {
             const href = $(el).attr('href');
-            if (href && regex.test(href)) {
+            if (href && (regex.test(href) || href.includes('/episode/'))) {
                 const title = $(el).text().trim() || href.split('/').pop().replace(/-/g, ' ');
                 if (!episodes.find(e => e.url === href)) {
                     episodes.push({ title, url: href });
@@ -105,34 +82,18 @@ class AkwamService {
             }
         });
 
-        // Sort episodes if they have numbers in title
-        return episodes.reverse(); // Akwam usually lists latest first in HTML
+        return episodes.reverse();
     }
 
     async getDownloadLinks(itemUrl) {
-        const { data } = await axios.get(itemUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
-                'Cache-Control': 'max-age=0',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1'
-            }
-        });
+        const { data } = await axios.get(itemUrl, { headers: this.headers });
         const $ = cheerio.load(data);
         const qualities = [];
 
-        // Akwam quality boxes usually have classes like .quality or .download-item
-        // The python script looked for 'tab-content quality'
         $('.quality-item, .download-item, a[href*="/link/"]').each((i, el) => {
             const href = $(el).attr('href') || $(el).find('a').attr('href');
             const qualityText = $(el).text().trim();
-            const size = $(el).find('.font-size-14').text().trim(); // Based on python regex RGX_SIZE_TAG
+            const size = $(el).find('.font-size-14').text().trim();
 
             if (href && href.includes('/link/')) {
                 qualities.push({
@@ -147,54 +108,18 @@ class AkwamService {
     }
 
     async resolveDirectLink(linkUrl) {
-        // Step 1: Follow the link to the intermediate page
-        const res1 = await axios.get(linkUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
-                'Cache-Control': 'max-age=0',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1'
-            }
-        });
+        const res1 = await axios.get(linkUrl, { headers: this.headers });
         const $1 = cheerio.load(res1.data);
-
-        // Find the download button/link which usually has /download/ in it
-        // RGX_SHORTEN_URL = r'https?://(\w*\.*\w+\.\w+/download/.*?)"'
         let shortenUrl = '';
         $1('a').each((i, el) => {
             const href = $1(el).attr('href');
-            if (href && href.includes('/download/')) {
-                shortenUrl = href;
-            }
+            if (href && href.includes('/download/')) shortenUrl = href;
         });
 
         if (!shortenUrl) throw new Error('Could not find intermediate download link');
 
-        // Step 2: Get the direct URL from the shorten URL
-        const res2 = await axios.get(shortenUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
-                'Cache-Control': 'max-age=0',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1'
-            }
-        });
+        const res2 = await axios.get(shortenUrl, { headers: this.headers });
         const $2 = cheerio.load(res2.data);
-
-        // RGX_DIRECT_URL = r'([a-z0-9]{4,}\.\w+\.\w+/download/.*?)"'
-        // This is usually in a <script> or a hidden <a> tag
         let directLink = '';
         $2('a').each((i, el) => {
             const href = $2(el).attr('href');
@@ -203,14 +128,13 @@ class AkwamService {
             }
         });
 
-        // Fallback: search in script
         if (!directLink) {
             const scriptContent = res2.data;
             const match = scriptContent.match(/window\.location\.href\s*=\s*"(.*?)"/);
             if (match) directLink = match[1];
         }
 
-        return directLink || shortenUrl; // Sometimes shortenUrl IS the direct one after redirect
+        return directLink || shortenUrl;
     }
 }
 
