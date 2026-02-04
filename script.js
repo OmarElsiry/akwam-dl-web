@@ -17,13 +17,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Handle Source Selection (Akwam/EgyDead) - Currently Akwam primary
+    // Handle Source Selection (Akwam/EgyDead)
     toggleBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
             if (btn.tagName === 'BUTTON') {
-                toggleBtns.forEach(b => b.classList.remove('active'));
+                // Only remove active from OTHER BUTTONS, not the labels
+                toggleBtns.forEach(b => {
+                    if (b.tagName === 'BUTTON') b.classList.remove('active');
+                });
                 btn.classList.add('active');
                 currentSource = btn.getAttribute('data-source');
+                console.log(`Source toggled to: ${currentSource}`);
+
+                if (currentSource === 'egydead') {
+                    alert('EgyDead support is coming soon! Switching back to Akwam.');
+                    btn.classList.remove('active');
+                    toggleBtns[0].classList.add('active');
+                    currentSource = 'akwam';
+                }
             }
         });
     });

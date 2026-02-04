@@ -76,6 +76,13 @@ header {
     filter: drop-shadow(0 0 30px rgba(79, 172, 254, 0.2));
 }
 
+.logo span {
+    color: var(--primary);
+    -webkit-text-fill-color: var(--primary);
+    font-weight: 300;
+    margin-left: 5px;
+}
+
 .subtitle {
     font-size: 1.1rem;
     color: var(--text-muted);
@@ -122,7 +129,7 @@ header {
 
 .search-container {
     position: relative;
-    background: var(--glass-bg);
+    background: rgba(255, 255, 255, 0.03);
     padding: 8px;
     border-radius: 20px;
     border: 1px solid var(--glass-border);
@@ -166,6 +173,7 @@ header {
     transition: var(--transition);
     display: grid;
     place-items: center;
+    z-index: 20;
 }
 
 #search-btn:hover {

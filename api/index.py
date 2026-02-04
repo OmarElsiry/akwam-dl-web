@@ -39,15 +39,19 @@ class AkwamAPI:
         resp = requests.get(url, headers=HEADERS)
         resp.encoding = 'utf-8'
         
+        # Try absolute first, then relative
         pattern = rf'({self.base_url}/{_type}/\d+/.*?)"'
         matches = re.findall(pattern, resp.text)
+        
+        if not matches:
+            matches = re.findall(rf'href="(/{_type}/\d+/.*?)"', resp.text)
+            matches = [f"{self.base_url}{m}" for m in matches]
         
         results = []
         seen = set()
         for link in matches[::-1]:
             if link not in seen:
                 seen.add(link)
-                # Unquote FIRST, then format
                 slug = link.split('/')[-1]
                 title = unquote(slug).replace('-', ' ').title()
                 results.append({'title': title, 'url': link})
