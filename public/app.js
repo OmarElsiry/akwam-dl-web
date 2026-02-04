@@ -1,167 +1,188 @@
-const searchInput = document.getElementById('searchInput');
-const typeSelect = document.getElementById('typeSelect');
-const searchBtn = document.getElementById('searchBtn');
-const resultsList = document.getElementById('resultsList');
-const loader = document.getElementById('loader');
-const detailView = document.getElementById('detailView');
-const resultsArea = document.getElementById('resultsArea');
-const detailTitle = document.getElementById('detailTitle');
-const detailContent = document.getElementById('detailContent');
-const backBtn = document.getElementById('backBtn');
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:3000/api' : '/api';
 
-// UIUX: Listen for Enter key
+let currentType = 'movie';
+
+const searchInput = document.getElementById('searchInput');
+const searchBtn = document.getElementById('searchBtn');
+const resultsGrid = document.getElementById('resultsGrid');
+const statusMessage = document.getElementById('statusMessage');
+const modal = document.getElementById('detailModal');
+const modalTitle = document.getElementById('modalTitle');
+const modalBody = document.getElementById('modalBody');
+
+// Event Listeners
+searchBtn.addEventListener('click', () => performSearch());
 searchInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') performSearch(searchInput.value, typeSelect.value);
+    if (e.key === 'Enter') performSearch();
 });
 
-searchBtn.addEventListener('click', () => performSearch(searchInput.value, typeSelect.value));
-backBtn.addEventListener('click', showSearch);
+function switchTab(type) {
+    currentType = type;
 
-async function performSearch(query, type) {
+    // Update UI tabs
+    document.querySelectorAll('.nav-links li').forEach(el => {
+        el.classList.remove('active');
+        if (el.dataset.type === type) el.classList.add('active');
+    });
+
+    // Clear current results
+    resultsGrid.innerHTML = '';
+    statusMessage.textContent = `Ready to search in ${type === 'movie' ? 'Movies' : 'Series'} database.`;
+    statusMessage.classList.remove('hidden');
+}
+
+async function performSearch() {
+    const query = searchInput.value.trim();
     if (!query) return;
 
-    showLoader(true);
-    resultsList.innerHTML = '';
+    showStatus('Searching database...');
+    resultsGrid.innerHTML = '';
 
     try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&type=${type}`);
+        const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}&type=${currentType}`);
+        if (!res.ok) throw new Error('Search failed');
+
         const data = await res.json();
 
-        showLoader(false);
-        if (data.error) throw new Error(data.error);
-
         if (data.length === 0) {
-            resultsList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 4rem;"><p style="font-size: 1.5rem; opacity: 0.5;">No results matched your query. Perhaps check the spelling?</p></div>';
+            showStatus('No results found.');
             return;
         }
 
+        hideStatus();
         data.forEach(item => {
             const card = document.createElement('div');
             card.className = 'card';
             card.innerHTML = `
-                <div class="card-badge">${type.toUpperCase()}</div>
                 <h3>${item.title}</h3>
-                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 10px;">Click to view availability</p>
+                <div class="meta">${currentType.toUpperCase()}</div>
             `;
-            card.onclick = () => handleItemClick(item, type);
-            resultsList.appendChild(card);
+            card.onclick = () => openDetail(item);
+            resultsGrid.appendChild(card);
         });
+
     } catch (err) {
-        showLoader(false);
-        resultsList.innerHTML = `<div style="grid-column: 1/-1; color: #ff4444; text-align: center; padding: 2rem; background: rgba(255,0,0,0.1); border-radius: 12px; border: 1px solid rgba(255,0,0,0.2);">
-            <strong>Architectural Interrupt:</strong> ${err.message}
-        </div>`;
+        showStatus(`Error: ${err.message}`);
     }
 }
 
-async function handleItemClick(item, type) {
-    showDetail(item.title);
-    detailContent.innerHTML = '<div id="loader">SYNCHRONIZING CONTENT...</div>';
+async function openDetail(item) {
+    modal.classList.remove('hidden');
+    modalTitle.textContent = item.title;
+    modalBody.innerHTML = '<div class="status-message">Loading details...</div>';
 
     try {
-        if (type === 'series') {
-            const res = await fetch(`/api/episodes?url=${encodeURIComponent(item.url)}`);
-            const episodes = await res.json();
-            renderEpisodes(episodes);
-        } else {
-            const res = await fetch(`/api/qualities?url=${encodeURIComponent(item.url)}`);
-            const qualities = await res.json();
-            renderQualities(qualities);
+        let endpoint = currentType === 'movie' ? 'qualities' : 'episodes';
+        const res = await fetch(`${API_BASE}/${endpoint}?url=${encodeURIComponent(item.url)}`);
+        const data = await res.json();
+
+        modalBody.innerHTML = '';
+
+        if (data.length === 0) {
+            modalBody.innerHTML = '<div class="status-message">No content found.</div>';
+            return;
         }
+
+        if (currentType === 'movie') {
+            // Render Qualities
+            data.forEach(q => {
+                const row = document.createElement('div');
+                row.className = 'list-item';
+                row.innerHTML = `
+                    <span>${q.quality} <span class="quality-badge">${q.size}</span></span>
+                    <button onclick="resolveLink('${q.link}')">Get Link</button>
+                `;
+                modalBody.appendChild(row);
+            });
+        } else {
+            // Render Episodes
+            data.forEach(ep => {
+                const row = document.createElement('div');
+                row.className = 'list-item';
+                row.innerHTML = `
+                    <span>${ep.title}</span>
+                    <button onclick="fetchQualities('${ep.url}')">View</button>
+                `;
+                modalBody.appendChild(row);
+            });
+        }
+
     } catch (err) {
-        detailContent.innerHTML = `<p style="color:red">Error encountered: ${err.message}</p>`;
+        modalBody.innerHTML = `<div class="status-message error">Failed to load: ${err.message}</div>`;
     }
 }
 
-function renderEpisodes(episodes) {
-    detailContent.innerHTML = '<h3 style="color: var(--accent-color); font-size: 1.5rem; margin-bottom: 1.5rem;">EPISODE SELECTION</h3><div class="episode-grid"></div>';
-    const grid = detailContent.querySelector('.episode-grid');
+async function fetchQualities(url) {
+    modalBody.innerHTML = '<div class="status-message">Loading links...</div>';
+    try {
+        const res = await fetch(`${API_BASE}/qualities?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
 
-    if (episodes.length === 0) {
-        detailContent.innerHTML += '<p>No episodes indexed yet.</p>';
-        return;
+        modalBody.innerHTML = ''; // Clear loading
+
+        // Add a "Back" button roughly (by clearing and reloading episodes? No, simple list for now)
+        const backBtn = document.createElement('div');
+        backBtn.className = 'list-item';
+        backBtn.innerHTML = '<strong>Download Links</strong>';
+        modalBody.appendChild(backBtn);
+
+        data.forEach(q => {
+            const row = document.createElement('div');
+            row.className = 'list-item';
+            row.innerHTML = `
+                <span>${q.quality} <span class="quality-badge">${q.size}</span></span>
+                <button onclick="resolveLink('${q.link}')">Get Link</button>
+            `;
+            modalBody.appendChild(row);
+        });
+    } catch (err) {
+        modalBody.innerHTML = `<div class="status-message error">Error: ${err.message}</div>`;
     }
-
-    episodes.forEach((ep, idx) => {
-        const card = document.createElement('div');
-        card.className = 'ep-card';
-        card.innerText = ep.title.replace('الحلقة', 'EP'); // Localization fix for cleaner UI
-        card.onclick = async () => {
-            detailContent.innerHTML = `<div id="loader">EXTRACTING LINKS FOR ${ep.title.toUpperCase()}...</div>`;
-            const res = await fetch(`/api/qualities?url=${encodeURIComponent(ep.url)}`);
-            const qualities = await res.json();
-            renderQualities(qualities);
-        };
-        grid.appendChild(card);
-    });
 }
 
-function renderQualities(qualities) {
-    detailContent.innerHTML = '<h3 style="color: var(--accent-color); font-size: 1.5rem; margin-bottom: 1.5rem;">AVAILABLE QUALITIES</h3><ul class="quality-list"></ul>';
-    const list = detailContent.querySelector('.quality-list');
-
-    if (!qualities || qualities.length === 0) {
-        detailContent.innerHTML += '<div style="padding: 2rem; background: rgba(255,255,255,0.05); border-radius: 12px; opacity: 0.6;">No download channels mapped for this title at this time.</div>';
-        return;
-    }
-
-    qualities.forEach(q => {
-        const li = document.createElement('li');
-        li.className = 'quality-item';
-        li.innerHTML = `
-            <div>
-                <span style="font-size: 1.2rem; font-weight: 800; color: white;">${q.quality}</span>
-                <span style="color: var(--text-secondary); margin-left: 10px; font-size: 0.9rem;">— SIZE: ${q.size}</span>
-            </div>
-            <button class="dl-btn" onclick="resolveLink('${q.link}', event)">GENERATE ACCESS LINK</button>
-        `;
-        list.appendChild(li);
-    });
-}
-
-async function resolveLink(link, event) {
-    const btn = event.currentTarget;
-    const originalText = btn.innerText;
-    btn.innerText = 'NEGOTIATING...';
+async function resolveLink(url) {
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.textContent = 'Resolving...';
     btn.disabled = true;
 
     try {
-        const res = await fetch(`/api/resolve?url=${encodeURIComponent(link)}`);
+        const res = await fetch(`${API_BASE}/resolve?url=${encodeURIComponent(url)}`);
         const data = await res.json();
 
         if (data.directLink) {
-            btn.innerText = 'ACCESS GRANTED';
             window.open(data.directLink, '_blank');
+            btn.textContent = 'Opened!';
         } else {
-            alert('Protocol Violation: Could not resolve direct download route.');
+            throw new Error('No link returned');
         }
     } catch (err) {
-        alert('Internal System Error: ' + err.message);
+        alert('Failed to resolve link: ' + err.message);
+        btn.textContent = 'Failed';
     } finally {
         setTimeout(() => {
-            btn.innerText = originalText;
+            btn.textContent = originalText;
             btn.disabled = false;
-        }, 1000);
+        }, 2000);
     }
 }
 
-function showLoader(show) {
-    loader.classList.toggle('hidden', !show);
-    if (show) resultsList.innerHTML = '';
+function closeModal() {
+    modal.classList.add('hidden');
 }
 
-function showDetail(title) {
-    detailTitle.innerText = title.toUpperCase();
-    resultsArea.classList.add('hidden');
-    detailView.classList.remove('hidden');
-    document.querySelector('.search-section').classList.add('hidden');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+function showStatus(msg) {
+    statusMessage.textContent = msg;
+    statusMessage.classList.remove('hidden');
 }
 
-function showSearch() {
-    resultsArea.classList.remove('hidden');
-    detailView.classList.add('hidden');
-    document.querySelector('.search-section').classList.remove('hidden');
+function hideStatus() {
+    statusMessage.classList.add('hidden');
 }
 
-console.log('%c AKWAM PREMIER BYPASS SYSTEM v2.0 ', 'background: #222; color: #0088ff; font-weight: bold;');
+// Close modal on outside click
+window.onclick = function (event) {
+    if (event.target == modal) {
+        closeModal();
+    }
+}

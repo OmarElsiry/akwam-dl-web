@@ -4,61 +4,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Akwam Premier | Ultimate Downloader</title>
-    <!-- Modern Typography -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <title>Akwam Downloader - Enterprise Edition</title>
     <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 
 <body>
     <div class="app-container">
-        <header>
-            <h1>AKWAM <span>PREMIER</span></h1>
-            <p>The fastest way to stream and download your favorite cinema.</p>
-        </header>
-
-        <section class="search-section">
-            <div class="input-group">
-                <input type="text" id="searchInput" placeholder="Search for a movie or series title..."
-                    autocomplete="off">
-                <select id="typeSelect">
-                    <option value="movie">Movies</option>
-                    <option value="series">TV Series</option>
-                </select>
-                <button id="searchBtn">SEARCH</button>
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="logo">
+                <h2>Akwam<span>DL</span></h2>
             </div>
-        </section>
+            <ul class="nav-links">
+                <li class="active" data-type="movie" onclick="switchTab('movie')">Movies</li>
+                <li data-type="series" onclick="switchTab('series')">Series</li>
+            </ul>
+            <div class="status-indicator">
+                <span class="dot online"></span> System Operational
+            </div>
+        </nav>
 
-        <main id="resultsArea">
-            <div id="loader" class="hidden">SCANNING DATABASES...</div>
-            <div id="resultsList">
-                <!-- Visual Placeholder/Welcome -->
-                <div style="grid-column: 1/-1; text-align: center; padding: 4rem; color: var(--text-secondary);">
-                    <p style="font-size: 1.5rem; opacity: 0.5;">Awaiting your request. Type above to begin the search.
-                    </p>
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Top Header -->
+            <header class="top-bar">
+                <div class="search-container">
+                    <input type="text" id="searchInput" placeholder="Search database..." autocomplete="off">
+                    <button id="searchBtn">Search</button>
+                </div>
+            </header>
+
+            <!-- Content Grid -->
+            <div id="content-area" class="content-area">
+                <div id="resultsGrid" class="grid-container">
+                    <!-- Results will be injected here -->
+                </div>
+
+                <!-- Feedback/Status Message -->
+                <div id="statusMessage" class="status-message hidden"></div>
+            </div>
+
+            <!-- Detail Modal (Hidden by default) -->
+            <div id="detailModal" class="modal hidden">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="modalTitle">Title</h3>
+                        <button class="close-btn" onclick="closeModal()">&times;</button>
+                    </div>
+                    <div id="modalBody" class="modal-body">
+                        <!-- Episodes or Qualities go here -->
+                    </div>
                 </div>
             </div>
         </main>
-
-        <div id="detailView" class="hidden">
-            <div class="detail-header">
-                <button id="backBtn">← RETURN TO SEARCH</button>
-                <h2 id="detailTitle" style="font-size: 2.5rem; margin-bottom: 2rem;"></h2>
-            </div>
-            <div id="detailContent"></div>
-        </div>
     </div>
-
-    <!-- Micro-interaction enhancements -->
     <script src="app.js"></script>
-    <script>
-        // Smooth scroll to top on search
-        document.getElementById('searchBtn').addEventListener('click', () => {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        });
-    </script>
 </body>
 
 </html>
