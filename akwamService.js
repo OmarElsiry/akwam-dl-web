@@ -25,13 +25,15 @@ class ProxyManager {
         }
 
         // Fetch free proxies from ProxyScrape if list is empty or old (1 hour)
+        // Explicitly request SSL support to improve reliability for HTTPS targets
         if (this.proxies.length === 0 || (Date.now() - this.lastFetch > 3600000)) {
             try {
-                console.log('[ProxyManager] Fetching fresh proxy list...');
-                const response = await axios.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=all');
+                console.log('[ProxyManager] Fetching fresh SSL-supported proxy list...');
+                // protocol=http with ssl=yes ensures the proxy can handle CONNECT for HTTPS
+                const response = await axios.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=yes&anonymity=all');
                 this.proxies = response.data.trim().split('\r\n').filter(p => p.includes(':'));
                 this.lastFetch = Date.now();
-                console.log(`[ProxyManager] Fetched ${this.proxies.length} proxies.`);
+                console.log(`[ProxyManager] Fetched ${this.proxies.length} high-quality proxies.`);
             } catch (error) {
                 console.warn(`[ProxyManager] Failed to fetch proxy list: ${error.message}`);
                 return null;
@@ -47,7 +49,6 @@ class ProxyManager {
 
     getAgent(proxyUrl) {
         if (!proxyUrl) return {};
-        // Most free proxies are HTTP but support CONNECT for HTTPS targets
         return {
             httpAgent: new HttpProxyAgent(proxyUrl),
             httpsAgent: new HttpsProxyAgent(proxyUrl)
@@ -77,7 +78,7 @@ class AkwamService {
 
             // 1. Manually add cookies from the jar
             const cookieString = await jar.getCookieString(url);
-            if (cookieString) {
+            if (cookieString && cookieString !== '') {
                 config.headers['Cookie'] = cookieString;
             }
 
@@ -87,12 +88,18 @@ class AkwamService {
                 Object.assign(config, agents);
             }
 
-            // Standard headers
+            // Standard headers - emulating a clean Chrome request
             config.headers['User-Agent'] = config.headers['User-Agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
             config.headers['Accept'] = config.headers['Accept'] || 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7';
             config.headers['Accept-Language'] = config.headers['Accept-Language'] || 'en-US,en;q=0.9,ar;q=0.8';
             config.headers['Connection'] = 'keep-alive';
-            config.timeout = 20000; // Shorter timeout for faster rotation
+
+            // Critical: Remove headers that often trigger WAF or proxy rejection if not perfectly aligned
+            delete config.headers['Sec-Fetch-Site'];
+            delete config.headers['Sec-Fetch-Mode'];
+            delete config.headers['Sec-Fetch-Dest'];
+
+            config.timeout = 15000; // Faster rotation
             config.maxRedirects = 15;
 
             const response = await axios.get(url, config);
@@ -108,11 +115,17 @@ class AkwamService {
             return response;
         } catch (error) {
             const status = error.response ? error.response.status : null;
-            const retryableStatuses = [403, 405, 502, 503, 504];
-            const retryableCodes = ['ECONNABORTED', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNRESET'];
+            // 400/405/50x are often proxy-level rejections or cloudflare blocks that vary by IP
+            const retryableStatuses = [400, 403, 405, 502, 503, 504];
+            const retryableCodes = ['ECONNABORTED', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNRESET', 'EAI_AGAIN'];
+
+            if (status === 400 && error.response && error.response.data) {
+                const diag = typeof error.response.data === 'string' ? error.response.data.substring(0, 200) : 'JSON Body';
+                console.log(`[AkwamService] 400 Diagnostic: ${diag}`);
+            }
 
             if ((retryableStatuses.includes(status) || retryableCodes.includes(error.code)) && retries > 0) {
-                console.log(`[AkwamService] Request failed (${error.message}, Status: ${status}). Retrying with new proxy (${retries} left)...`);
+                console.log(`[AkwamService] Request failed (${error.message}, Status: ${status}). Retrying with fresh proxy (${retries} left)...`);
                 this.currentProxy = await proxyManager.getProxy();
                 return this.request(url, options, retries - 1);
             }
@@ -124,24 +137,21 @@ class AkwamService {
         if (!this.isInitialized) {
             try {
                 console.log('[AkwamService] Initializing session...');
-                const initialRes = await this.request('https://ak.sv/', {
-                    headers: { 'Sec-Fetch-Site': 'none' }
-                });
-
+                const initialRes = await this.request('https://ak.sv/');
                 this.baseUrl = initialRes.request.res.responseUrl.replace(/\/$/, '');
                 console.log(`[AkwamService] Resolved base URL: ${this.baseUrl}`);
                 this.isInitialized = true;
             } catch (error) {
-                console.warn(`[AkwamService] Initialization warning: ${error.message}. Attempting with proxy...`);
+                console.warn(`[AkwamService] Initialization failed: ${error.message}. Force-starting rotation...`);
                 this.currentProxy = await proxyManager.getProxy();
                 this.baseUrl = 'https://ak.sv';
                 this.isInitialized = true;
-                // Try to properly init via proxy
+
                 try {
                     const proxyInit = await this.request(this.baseUrl + '/');
                     this.baseUrl = proxyInit.request.res.responseUrl.replace(/\/$/, '');
                 } catch (e) {
-                    console.error(`[AkwamService] Proxy init failed: ${e.message}`);
+                    console.error(`[AkwamService] Proxy-based initialization also failing: ${e.message}`);
                 }
             }
         }
@@ -150,16 +160,12 @@ class AkwamService {
 
     async search(query, type = 'movie', page = 1) {
         const baseUrl = await this.init();
-        // Correct structure as per brute-force test and site form
         const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(query)}&section=${type}&page=${page}`;
         console.log(`[AkwamService] Searching: ${searchUrl}`);
 
         try {
             const { data } = await this.request(searchUrl, {
-                headers: {
-                    'Referer': `${baseUrl}/`,
-                    'Sec-Fetch-Site': 'same-origin'
-                }
+                headers: { 'Referer': `${baseUrl}/` }
             });
 
             const domainPattern = baseUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/sv$/, '\\w+');
@@ -186,7 +192,7 @@ class AkwamService {
                 results
             };
         } catch (error) {
-            console.error(`[AkwamService] Search error: ${error.message}`);
+            console.error(`[AkwamService] Search error after retries: ${error.message}`);
             throw error;
         }
     }
@@ -198,10 +204,7 @@ class AkwamService {
 
         try {
             const { data, request } = await this.request(safeUrl, {
-                headers: {
-                    'Referer': `${baseUrl}/search`,
-                    'Sec-Fetch-Site': 'same-origin'
-                }
+                headers: { 'Referer': `${baseUrl}/search` }
             });
             const finalBaseUrl = request.res.responseUrl.split('/').slice(0, 3).join('/');
 
@@ -238,10 +241,7 @@ class AkwamService {
 
         try {
             const { data } = await this.request(itemUrl, {
-                headers: {
-                    'Referer': baseUrl,
-                    'Sec-Fetch-Site': 'same-origin'
-                }
+                headers: { 'Referer': baseUrl }
             });
 
             const RGX_QUALITY_TAG = /tab-content quality.*?a href="(https?:\/\/[\w.*]+\.[\w]+\/link\/\d+)"/g;
@@ -281,9 +281,7 @@ class AkwamService {
         console.log(`[AkwamService] Resolving direct URL: ${qualityLink}`);
 
         try {
-            const res1 = await this.request(qualityLink, {
-                headers: { 'Sec-Fetch-Site': 'cross-site' }
-            });
+            const res1 = await this.request(qualityLink);
 
             const shortenMatch = res1.data.match(/https?:\/\/([\w.*]+\.[\w]+\/download\/[^"]+)"/);
 
@@ -300,7 +298,6 @@ class AkwamService {
 
             const res2 = await this.request(shortenUrl);
             let finalPage = res2.data;
-            let finalUrl = res2.request.res.responseUrl;
 
             const directMatch = finalPage.match(/([a-z0-9]{4,}\.[\w]+\.[\w]+\/download\/[^"]+)"/);
 
