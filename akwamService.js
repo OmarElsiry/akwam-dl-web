@@ -1,6 +1,24 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 
+// Create axios instance with browser-like headers
+const client = axios.create({
+    timeout: 15000,
+    maxRedirects: 10,
+    headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1'
+    }
+});
+
 class AkwamService {
     constructor() {
         this.baseUrl = null;
@@ -10,7 +28,7 @@ class AkwamService {
     async init() {
         if (!this.baseUrl) {
             try {
-                const response = await axios.get('https://ak.sv/', {
+                const response = await client.get('https://ak.sv/', {
                     maxRedirects: 5,
                     timeout: 10000
                 });
@@ -29,7 +47,7 @@ class AkwamService {
         const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(query)}&section=${type}&page=${page}`;
         console.log(`[AkwamService] Searching: ${searchUrl}`);
 
-        const { data } = await axios.get(searchUrl, { timeout: 10000 });
+        const { data } = await client.get(searchUrl, { timeout: 10000 });
 
         // Python regex: ({self.url}/{self.type}/\d+/.*?)"
         const regex = new RegExp(`(${baseUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/${type}/\\d+/[^"]+)"`, 'g');
@@ -61,7 +79,7 @@ class AkwamService {
         const baseUrl = await this.init();
         console.log(`[AkwamService] Fetching episodes: ${seriesUrl}`);
 
-        const { data } = await axios.get(seriesUrl, { timeout: 10000 });
+        const { data } = await client.get(seriesUrl, { timeout: 10000 });
 
         // Python regex: ({self.url}/episode/\d+/.*?)"
         const regex = new RegExp(`(${baseUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/episode/\\d+/[^"]+)"`, 'g');
@@ -90,7 +108,7 @@ class AkwamService {
         const baseUrl = await this.init();
         console.log(`[AkwamService] Fetching qualities: ${itemUrl}`);
 
-        const { data } = await axios.get(itemUrl, { timeout: 10000 });
+        const { data } = await client.get(itemUrl, { timeout: 10000 });
 
         // Python regexes
         const RGX_QUALITY_TAG = /tab-content quality.*?a href="(https?:\/\/[\w.*]+\.[\w]+\/link\/\d+)"/g;
@@ -129,7 +147,7 @@ class AkwamService {
 
         try {
             // Step 1: Get the shortened URL page
-            const res1 = await axios.get(qualityLink, { timeout: 15000 });
+            const res1 = await client.get(qualityLink, { timeout: 15000 });
 
             // Python regex: RGX_SHORTEN_URL = r'https?://(\w*\.*\w+\.\w+/download/.*?)"'
             const shortenMatch = res1.data.match(/https?:\/\/([\w.*]+\.[\w]+\/download\/[^"]+)"/);
@@ -146,14 +164,14 @@ class AkwamService {
             console.log(`[AkwamService] Found shorten URL: ${shortenUrl}`);
 
             // Step 2: Follow the shortened URL
-            const res2 = await axios.get(shortenUrl, { timeout: 15000 });
+            const res2 = await client.get(shortenUrl, { timeout: 15000 });
             let finalPage = res2.data;
             let finalUrl = res2.request.res.responseUrl;
 
             // If redirected, follow it
             if (shortenUrl !== finalUrl) {
                 console.log(`[AkwamService] Redirected to: ${finalUrl}`);
-                const res3 = await axios.get(finalUrl, { timeout: 15000 });
+                const res3 = await client.get(finalUrl, { timeout: 15000 });
                 finalPage = res3.data;
             }
 
