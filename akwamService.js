@@ -2,46 +2,118 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const wrapper = require('axios-cookiejar-support').wrapper;
 const { CookieJar } = require('tough-cookie');
+const { HttpProxyAgent } = require('http-proxy-agent');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 // Create a persistent cookie jar
 const jar = new CookieJar();
 
-// Create axios instance with cookie support and browser-like headers
-const client = wrapper(axios.create({
-    jar,
-    timeout: 20000,
-    maxRedirects: 15,
-    headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-        'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
-        'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"Windows"',
-        'DNT': '1'
+/**
+ * ProxyManager handles fetching and rotating proxies
+ */
+class ProxyManager {
+    constructor() {
+        this.proxies = [];
+        this.currentIndex = 0;
+        this.customProxy = process.env.PROXY_URL || null;
+        this.lastFetch = 0;
     }
-}));
+
+    async getProxy() {
+        if (this.customProxy) {
+            console.log(`[ProxyManager] Using custom proxy: ${this.customProxy}`);
+            return this.customProxy;
+        }
+
+        // Fetch free proxies from ProxyScrape if list is empty or old (1 hour)
+        if (this.proxies.length === 0 || (Date.now() - this.lastFetch > 3600000)) {
+            try {
+                console.log('[ProxyManager] Fetching fresh proxy list...');
+                const response = await axios.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=all');
+                this.proxies = response.data.trim().split('\r\n').filter(p => p.includes(':'));
+                this.lastFetch = Date.now();
+                console.log(`[ProxyManager] Fetched ${this.proxies.length} proxies.`);
+            } catch (error) {
+                console.warn(`[ProxyManager] Failed to fetch proxy list: ${error.message}`);
+                return null;
+            }
+        }
+
+        if (this.proxies.length === 0) return null;
+
+        const proxy = this.proxies[this.currentIndex];
+        this.currentIndex = (this.currentIndex + 1) % this.proxies.length;
+        return `http://${proxy}`;
+    }
+
+    getAgent(proxyUrl) {
+        if (!proxyUrl) return {};
+        const isHttps = proxyUrl.startsWith('https');
+        return isHttps
+            ? { httpsAgent: new HttpsProxyAgent(proxyUrl) }
+            : { httpAgent: new HttpProxyAgent(proxyUrl), httpsAgent: new HttpsProxyAgent(proxyUrl) }; // HttpsAgent for the target even if proxy is http
+    }
+}
+
+const proxyManager = new ProxyManager();
 
 class AkwamService {
     constructor() {
         this.baseUrl = null;
         this.HTTP = 'https://';
         this.isInitialized = false;
+        this.currentProxy = null;
+    }
+
+    /**
+     * Internal request wrapper with proxy support and retry logic
+     */
+    async request(url, options = {}, retries = 2) {
+        try {
+            const config = { ...options };
+
+            // Apply proxy if we have one or if it's a retry
+            if (this.currentProxy) {
+                const agents = proxyManager.getAgent(this.currentProxy);
+                Object.assign(config, agents);
+            }
+
+            const clientInstance = wrapper(axios.create({
+                jar,
+                timeout: 30000,
+                maxRedirects: 15,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                    'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Ch-Ua-Platform': '"Windows"',
+                    ...options.headers
+                }
+            }));
+
+            return await clientInstance.get(url, config);
+        } catch (error) {
+            const is403 = error.response && error.response.status === 403;
+
+            if ((is403 || error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') && retries > 0) {
+                console.log(`[AkwamService] Request failed (${error.message}). Retrying with new proxy...`);
+                this.currentProxy = await proxyManager.getProxy();
+                return this.request(url, options, retries - 1);
+            }
+            throw error;
+        }
     }
 
     async init() {
         if (!this.isInitialized) {
             try {
                 console.log('[AkwamService] Initializing session...');
-                // First visit the core domain to get initial cookies
-                const initialRes = await client.get('https://ak.sv/', {
+                const initialRes = await this.request('https://ak.sv/', {
                     headers: { 'Sec-Fetch-Site': 'none' }
                 });
 
@@ -49,9 +121,10 @@ class AkwamService {
                 console.log(`[AkwamService] Resolved base URL: ${this.baseUrl}`);
                 this.isInitialized = true;
             } catch (error) {
-                console.warn(`[AkwamService] Initialization warning: ${error.message}`);
+                console.warn(`[AkwamService] Initialization warning: ${error.message}. Attempting with proxy...`);
+                this.currentProxy = await proxyManager.getProxy();
                 this.baseUrl = 'https://ak.sv';
-                this.isInitialized = true; // Still mark as initialized to avoid loops
+                this.isInitialized = true;
             }
         }
         return this.baseUrl;
@@ -63,14 +136,13 @@ class AkwamService {
         console.log(`[AkwamService] Searching: ${searchUrl}`);
 
         try {
-            const { data } = await client.get(searchUrl, {
+            const { data } = await this.request(searchUrl, {
                 headers: {
                     'Referer': `${baseUrl}/`,
                     'Sec-Fetch-Site': 'same-origin'
                 }
             });
 
-            // Match Python regex: ({self.url}/{self.type}/\d+/.*?)"
             const domainPattern = baseUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/sv$/, '\\w+');
             const regex = new RegExp(`(${domainPattern}/${type}/\\d+/[^"]+)"`, 'g');
             const matches = [...data.matchAll(regex)];
@@ -97,7 +169,7 @@ class AkwamService {
         } catch (error) {
             console.error(`[AkwamService] Search error: ${error.message}`);
             if (error.response && error.response.status === 403) {
-                throw new Error('Access Forbidden (403). Cloudflare may be blocking this request.');
+                throw new Error('Access Forbidden (403). Cloudflare is blocking Vercel. Please set a PROXY_URL in your environment variables.');
             }
             throw error;
         }
@@ -109,7 +181,7 @@ class AkwamService {
         console.log(`[AkwamService] Fetching episodes: ${safeUrl}`);
 
         try {
-            const { data, request } = await client.get(safeUrl, {
+            const { data, request } = await this.request(safeUrl, {
                 headers: {
                     'Referer': `${baseUrl}/search`,
                     'Sec-Fetch-Site': 'same-origin'
@@ -149,7 +221,7 @@ class AkwamService {
         console.log(`[AkwamService] Fetching qualities: ${itemUrl}`);
 
         try {
-            const { data } = await client.get(itemUrl, {
+            const { data } = await this.request(itemUrl, {
                 headers: {
                     'Referer': baseUrl,
                     'Sec-Fetch-Site': 'same-origin'
@@ -193,7 +265,7 @@ class AkwamService {
         console.log(`[AkwamService] Resolving direct URL: ${qualityLink}`);
 
         try {
-            const res1 = await client.get(qualityLink, {
+            const res1 = await this.request(qualityLink, {
                 headers: { 'Sec-Fetch-Site': 'cross-site' }
             });
 
@@ -210,15 +282,9 @@ class AkwamService {
             const shortenUrl = this.HTTP + shortenMatch[1];
             console.log(`[AkwamService] Found shorten URL: ${shortenUrl}`);
 
-            const res2 = await client.get(shortenUrl);
+            const res2 = await this.request(shortenUrl);
             let finalPage = res2.data;
             let finalUrl = res2.request.res.responseUrl;
-
-            if (shortenUrl !== finalUrl) {
-                console.log(`[AkwamService] Followed redirect to: ${finalUrl}`);
-                const res3 = await client.get(finalUrl);
-                finalPage = res3.data;
-            }
 
             const directMatch = finalPage.match(/([a-z0-9]{4,}\.[\w]+\.[\w]+\/download\/[^"]+)"/);
 
@@ -261,12 +327,6 @@ class AkwamService {
                         quality: qualityInfo.quality,
                         size: qualityInfo.size,
                         ...directResult
-                    });
-                } else {
-                    results.push({
-                        ...episode,
-                        success: false,
-                        error: 'No quality links found'
                     });
                 }
             } catch (error) {
