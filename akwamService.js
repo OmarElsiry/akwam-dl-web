@@ -107,9 +107,11 @@ class AkwamService {
     }
 
     async resolveDirectLink(linkUrl) {
+        // Step 1: Intermediate Page
         const data1 = await this.fetchWithProxy(linkUrl);
         const $1 = cheerio.load(data1);
         let shortenUrl = '';
+
         $1('a').each((i, el) => {
             const href = $1(el).attr('href');
             if (href && href.includes('/download/')) shortenUrl = href;
@@ -117,9 +119,16 @@ class AkwamService {
 
         if (!shortenUrl) throw new Error('Download gate blocked resolution.');
 
+        // Step 2: Final Page
         const data2 = await this.fetchWithProxy(shortenUrl);
+
+        // Strategy A: JavaScript Redirection
         const match = data2.match(/window\.location\.href\s*=\s*"(.*?)"/);
-        return match ? match[1] : shortenUrl;
+        if (match) return match[1];
+
+        // Strategy B: Fallback to the Short URL if it's actually the direct file
+        // Sometimes Akwam changes behavior so the /download/ link IS the direct link
+        return shortenUrl;
     }
 }
 
