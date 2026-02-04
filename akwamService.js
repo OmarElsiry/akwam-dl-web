@@ -1,6 +1,6 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
-const { wrapper } = require('axios-cookiejar-support');
+const wrapper = require('axios-cookiejar-support').wrapper;
 const { CookieJar } = require('tough-cookie');
 
 // Create a persistent cookie jar
