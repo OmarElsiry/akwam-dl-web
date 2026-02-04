@@ -9,6 +9,11 @@ const detailTitle = document.getElementById('detailTitle');
 const detailContent = document.getElementById('detailContent');
 const backBtn = document.getElementById('backBtn');
 
+// UIUX: Listen for Enter key
+searchInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') performSearch(searchInput.value, typeSelect.value);
+});
+
 searchBtn.addEventListener('click', () => performSearch(searchInput.value, typeSelect.value));
 backBtn.addEventListener('click', showSearch);
 
@@ -26,26 +31,32 @@ async function performSearch(query, type) {
         if (data.error) throw new Error(data.error);
 
         if (data.length === 0) {
-            resultsList.innerHTML = '<p>No results found.</p>';
+            resultsList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 4rem;"><p style="font-size: 1.5rem; opacity: 0.5;">No results matched your query. Perhaps check the spelling?</p></div>';
             return;
         }
 
         data.forEach(item => {
             const card = document.createElement('div');
             card.className = 'card';
-            card.innerHTML = `<h3>${item.title}</h3>`;
+            card.innerHTML = `
+                <div class="card-badge">${type.toUpperCase()}</div>
+                <h3>${item.title}</h3>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 10px;">Click to view availability</p>
+            `;
             card.onclick = () => handleItemClick(item, type);
             resultsList.appendChild(card);
         });
     } catch (err) {
         showLoader(false);
-        resultsList.innerHTML = `<p style="color:red">Error: ${err.message}</p>`;
+        resultsList.innerHTML = `<div style="grid-column: 1/-1; color: #ff4444; text-align: center; padding: 2rem; background: rgba(255,0,0,0.1); border-radius: 12px; border: 1px solid rgba(255,0,0,0.2);">
+            <strong>Architectural Interrupt:</strong> ${err.message}
+        </div>`;
     }
 }
 
 async function handleItemClick(item, type) {
     showDetail(item.title);
-    detailContent.innerHTML = 'Loading details...';
+    detailContent.innerHTML = '<div id="loader">SYNCHRONIZING CONTENT...</div>';
 
     try {
         if (type === 'series') {
@@ -58,20 +69,25 @@ async function handleItemClick(item, type) {
             renderQualities(qualities);
         }
     } catch (err) {
-        detailContent.innerHTML = `<p style="color:red">Error: ${err.message}</p>`;
+        detailContent.innerHTML = `<p style="color:red">Error encountered: ${err.message}</p>`;
     }
 }
 
 function renderEpisodes(episodes) {
-    detailContent.innerHTML = '<h3>Episodes</h3><div class="episode-grid"></div>';
+    detailContent.innerHTML = '<h3 style="color: var(--accent-color); font-size: 1.5rem; margin-bottom: 1.5rem;">EPISODE SELECTION</h3><div class="episode-grid"></div>';
     const grid = detailContent.querySelector('.episode-grid');
 
-    episodes.forEach(ep => {
+    if (episodes.length === 0) {
+        detailContent.innerHTML += '<p>No episodes indexed yet.</p>';
+        return;
+    }
+
+    episodes.forEach((ep, idx) => {
         const card = document.createElement('div');
         card.className = 'ep-card';
-        card.innerText = ep.title;
+        card.innerText = ep.title.replace('الحلقة', 'EP'); // Localization fix for cleaner UI
         card.onclick = async () => {
-            detailContent.innerHTML = `Loading qualities for ${ep.title}...`;
+            detailContent.innerHTML = `<div id="loader">EXTRACTING LINKS FOR ${ep.title.toUpperCase()}...</div>`;
             const res = await fetch(`/api/qualities?url=${encodeURIComponent(ep.url)}`);
             const qualities = await res.json();
             renderQualities(qualities);
@@ -81,11 +97,11 @@ function renderEpisodes(episodes) {
 }
 
 function renderQualities(qualities) {
-    detailContent.innerHTML = '<h3>Download Links</h3><ul class="quality-list"></ul>';
+    detailContent.innerHTML = '<h3 style="color: var(--accent-color); font-size: 1.5rem; margin-bottom: 1.5rem;">AVAILABLE QUALITIES</h3><ul class="quality-list"></ul>';
     const list = detailContent.querySelector('.quality-list');
 
-    if (qualities.length === 0) {
-        list.innerHTML = '<li>No download links found.</li>';
+    if (!qualities || qualities.length === 0) {
+        detailContent.innerHTML += '<div style="padding: 2rem; background: rgba(255,255,255,0.05); border-radius: 12px; opacity: 0.6;">No download channels mapped for this title at this time.</div>';
         return;
     }
 
@@ -93,17 +109,20 @@ function renderQualities(qualities) {
         const li = document.createElement('li');
         li.className = 'quality-item';
         li.innerHTML = `
-            <span><strong>${q.quality}</strong> (${q.size})</span>
-            <button class="dl-btn" onclick="resolveLink(event, '${q.link}')">Get Direct Link</button>
+            <div>
+                <span style="font-size: 1.2rem; font-weight: 800; color: white;">${q.quality}</span>
+                <span style="color: var(--text-secondary); margin-left: 10px; font-size: 0.9rem;">— SIZE: ${q.size}</span>
+            </div>
+            <button class="dl-btn" onclick="resolveLink('${q.link}', event)">GENERATE ACCESS LINK</button>
         `;
         list.appendChild(li);
     });
 }
 
-async function resolveLink(event, link) {
-    const btn = event.target;
+async function resolveLink(link, event) {
+    const btn = event.currentTarget;
     const originalText = btn.innerText;
-    btn.innerText = 'Resolving...';
+    btn.innerText = 'NEGOTIATING...';
     btn.disabled = true;
 
     try {
@@ -111,27 +130,32 @@ async function resolveLink(event, link) {
         const data = await res.json();
 
         if (data.directLink) {
+            btn.innerText = 'ACCESS GRANTED';
             window.open(data.directLink, '_blank');
         } else {
-            alert('Could not resolve direct link.');
+            alert('Protocol Violation: Could not resolve direct download route.');
         }
     } catch (err) {
-        alert('Error: ' + err.message);
+        alert('Internal System Error: ' + err.message);
     } finally {
-        btn.innerText = originalText;
-        btn.disabled = false;
+        setTimeout(() => {
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }, 1000);
     }
 }
 
 function showLoader(show) {
     loader.classList.toggle('hidden', !show);
+    if (show) resultsList.innerHTML = '';
 }
 
 function showDetail(title) {
-    detailTitle.innerText = title;
+    detailTitle.innerText = title.toUpperCase();
     resultsArea.classList.add('hidden');
     detailView.classList.remove('hidden');
     document.querySelector('.search-section').classList.add('hidden');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function showSearch() {
@@ -140,7 +164,4 @@ function showSearch() {
     document.querySelector('.search-section').classList.remove('hidden');
 }
 
-// Initial user searches for "Batman" and "Dark" aren't performed automatically 
-// but the user can do them. The requirement was to "run the script to get movie called batman"
-// I will simulate this by logging to console or showing it in the build process.
-console.log('App Initialized. Try searching for Batman or Dark.');
+console.log('%c AKWAM PREMIER BYPASS SYSTEM v2.0 ', 'background: #222; color: #0088ff; font-weight: bold;');

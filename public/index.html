@@ -4,45 +4,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Akwam Downloader</title>
+    <title>Akwam Premier | Ultimate Downloader</title>
+    <!-- Modern Typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-    <div class="container">
+    <div class="app-container">
         <header>
-            <h1>Akwam DL</h1>
-            <p>Simple, Fast, and Direct</p>
+            <h1>AKWAM <span>PREMIER</span></h1>
+            <p>The fastest way to stream and download your favorite cinema.</p>
         </header>
 
         <section class="search-section">
             <div class="input-group">
-                <input type="text" id="searchInput" placeholder="Search for Movie or Series...">
+                <input type="text" id="searchInput" placeholder="Search for a movie or series title..."
+                    autocomplete="off">
                 <select id="typeSelect">
-                    <option value="movie">Movie</option>
-                    <option value="series">Series</option>
+                    <option value="movie">Movies</option>
+                    <option value="series">TV Series</option>
                 </select>
-                <button id="searchBtn">Search</button>
+                <button id="searchBtn">SEARCH</button>
             </div>
         </section>
 
         <main id="resultsArea">
-            <!-- Results will appear here -->
-            <div id="loader" class="hidden">Loading...</div>
-            <div id="resultsList"></div>
+            <div id="loader" class="hidden">SCANNING DATABASES...</div>
+            <div id="resultsList">
+                <!-- Visual Placeholder/Welcome -->
+                <div style="grid-column: 1/-1; text-align: center; padding: 4rem; color: var(--text-secondary);">
+                    <p style="font-size: 1.5rem; opacity: 0.5;">Awaiting your request. Type above to begin the search.
+                    </p>
+                </div>
+            </div>
         </main>
 
         <div id="detailView" class="hidden">
-            <button id="backBtn">← Back</button>
-            <h2 id="detailTitle"></h2>
+            <div class="detail-header">
+                <button id="backBtn">← RETURN TO SEARCH</button>
+                <h2 id="detailTitle" style="font-size: 2.5rem; margin-bottom: 2rem;"></h2>
+            </div>
             <div id="detailContent"></div>
         </div>
     </div>
 
+    <!-- Micro-interaction enhancements -->
     <script src="app.js"></script>
+    <script>
+        // Smooth scroll to top on search
+        document.getElementById('searchBtn').addEventListener('click', () => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+    </script>
 </body>
 
 </html>
