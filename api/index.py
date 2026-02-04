@@ -134,13 +134,27 @@ akwam_api = AkwamAPI()
 
 @app.get("/")
 async def root_ui():
-    # Robust path resolution for Vercel
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     index_path = os.path.join(base_dir, "index.html")
-    
     if os.path.exists(index_path):
         return FileResponse(index_path)
-    return {"error": "UI file (index.html) not found", "path_searched": index_path}
+    return {"error": "UI file (index.html) not found"}
+
+@app.get("/style.css")
+async def get_style():
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    style_path = os.path.join(base_dir, "style.css")
+    if os.path.exists(style_path):
+        return FileResponse(style_path, media_type="text/css")
+    return {"error": "CSS file not found"}
+
+@app.get("/script.js")
+async def get_script():
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    script_path = os.path.join(base_dir, "script.js")
+    if os.path.exists(script_path):
+        return FileResponse(script_path, media_type="application/javascript")
+    return {"error": "JS file not found"}
 
 @app.get("/api/akwam")
 async def handle_akwam(action: str, q: Optional[str] = None, type: Optional[str] = "movie", url: Optional[str] = None):

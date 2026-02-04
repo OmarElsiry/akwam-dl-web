@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Akwam Professional</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+
+    <div class="container">
+        <header>
+            <h1 class="logo">Akwam<span>Pro</span></h1>
+            <p class="subtitle">Premium Downloader Interface</p>
+        </header>
+
+        <div class="search-wrapper">
+            <div class="controls">
+                <button class="toggle-btn active" data-source="akwam">Akwam</button>
+                <button class="toggle-btn" data-source="egydead">EgyDead</button>
+
+                <div style="width: 20px;"></div> <!-- Spacer -->
+
+                <label class="toggle-btn active" style="cursor: pointer;">
+                    <input type="radio" name="search-type" value="movie" checked style="display:none"
+                        onchange="this.parentElement.classList.add('active'); this.parentElement.nextElementSibling.classList.remove('active')">
+                    Movies
+                </label>
+                <label class="toggle-btn" style="cursor: pointer;">
+                    <input type="radio" name="search-type" value="series" style="display:none"
+                        onchange="this.parentElement.classList.add('active'); this.parentElement.previousElementSibling.classList.remove('active')">
+                    Series
+                </label>
+            </div>
+
+            <div class="search-container">
+                <input type="text" id="search-input" placeholder="Search for movies or series...">
+                <button id="search-btn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <div id="results-container" class="results-grid">
+            <!-- Results will appear here -->
+            <div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 50px;">
+                Start by searching for a title above.
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <div class="close-modal">&times;</div>
+            <div id="modal-body">
+                <!-- Modal Content -->
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
