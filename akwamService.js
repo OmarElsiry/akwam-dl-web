@@ -47,10 +47,11 @@ class ProxyManager {
 
     getAgent(proxyUrl) {
         if (!proxyUrl) return {};
-        const isHttps = proxyUrl.startsWith('https');
-        return isHttps
-            ? { httpsAgent: new HttpsProxyAgent(proxyUrl) }
-            : { httpAgent: new HttpProxyAgent(proxyUrl), httpsAgent: new HttpsProxyAgent(proxyUrl) };
+        // Most free proxies are HTTP but support CONNECT for HTTPS targets
+        return {
+            httpAgent: new HttpProxyAgent(proxyUrl),
+            httpsAgent: new HttpsProxyAgent(proxyUrl)
+        };
     }
 }
 
@@ -67,7 +68,7 @@ class AkwamService {
     /**
      * Internal request wrapper with manual cookie handling, proxy support, and retry logic
      */
-    async request(url, options = {}, retries = 2) {
+    async request(url, options = {}, retries = 5) {
         try {
             const config = {
                 ...options,
@@ -91,7 +92,7 @@ class AkwamService {
             config.headers['Accept'] = config.headers['Accept'] || 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7';
             config.headers['Accept-Language'] = config.headers['Accept-Language'] || 'en-US,en;q=0.9,ar;q=0.8';
             config.headers['Connection'] = 'keep-alive';
-            config.timeout = 30000;
+            config.timeout = 20000; // Shorter timeout for faster rotation
             config.maxRedirects = 15;
 
             const response = await axios.get(url, config);
@@ -106,10 +107,12 @@ class AkwamService {
 
             return response;
         } catch (error) {
-            const is403 = error.response && error.response.status === 403;
+            const status = error.response ? error.response.status : null;
+            const retryableStatuses = [403, 405, 502, 503, 504];
+            const retryableCodes = ['ECONNABORTED', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNRESET'];
 
-            if ((is403 || error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') && retries > 0) {
-                console.log(`[AkwamService] Request failed (${error.message}). Retrying with new proxy...`);
+            if ((retryableStatuses.includes(status) || retryableCodes.includes(error.code)) && retries > 0) {
+                console.log(`[AkwamService] Request failed (${error.message}, Status: ${status}). Retrying with new proxy (${retries} left)...`);
                 this.currentProxy = await proxyManager.getProxy();
                 return this.request(url, options, retries - 1);
             }
@@ -133,6 +136,13 @@ class AkwamService {
                 this.currentProxy = await proxyManager.getProxy();
                 this.baseUrl = 'https://ak.sv';
                 this.isInitialized = true;
+                // Try to properly init via proxy
+                try {
+                    const proxyInit = await this.request(this.baseUrl + '/');
+                    this.baseUrl = proxyInit.request.res.responseUrl.replace(/\/$/, '');
+                } catch (e) {
+                    console.error(`[AkwamService] Proxy init failed: ${e.message}`);
+                }
             }
         }
         return this.baseUrl;
@@ -140,6 +150,7 @@ class AkwamService {
 
     async search(query, type = 'movie', page = 1) {
         const baseUrl = await this.init();
+        // Correct structure as per brute-force test and site form
         const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(query)}&section=${type}&page=${page}`;
         console.log(`[AkwamService] Searching: ${searchUrl}`);
 
@@ -176,9 +187,6 @@ class AkwamService {
             };
         } catch (error) {
             console.error(`[AkwamService] Search error: ${error.message}`);
-            if (error.response && error.response.status === 403) {
-                throw new Error('Access Forbidden (403). Cloudflare is blocking Vercel. Please set a PROXY_URL in your environment variables.');
-            }
             throw error;
         }
     }
