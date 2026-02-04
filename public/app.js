@@ -94,10 +94,62 @@ function renderQualities(qualities) {
         li.className = 'quality-item';
         li.innerHTML = `
             <span><strong>${q.quality}</strong> (${q.size})</span>
-            <button class="dl-btn" onclick="resolveLink('${q.link}')">Get Direct Link</button>
+            <div class="btn-group">
+                <button class="dl-btn" onclick="resolveLink('${q.link}')">Open Link</button>
+                <button class="dl-btn download-btn" onclick="resolveAndDownload('${q.link}', '${detailTitle.innerText} - ${q.quality}')">Download to PC</button>
+            </div>
         `;
         list.appendChild(li);
     });
+}
+
+async function resolveAndDownload(link, name) {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerText = 'Initializing...';
+
+    try {
+        const res = await fetch('/api/download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: link, name: name })
+        });
+        const { downloadId } = await res.json();
+
+        pollDownloadStatus(downloadId, btn);
+    } catch (err) {
+        alert('Error: ' + err.message);
+        btn.disabled = false;
+        btn.innerText = 'Download to PC';
+    }
+}
+
+function pollDownloadStatus(id, btn) {
+    const interval = setInterval(async () => {
+        try {
+            const res = await fetch(`/api/download-status?id=${id}`);
+            const status = await res.json();
+
+            if (status.status === 'downloading') {
+                btn.innerText = `Downloading ${status.progress}%`;
+            } else if (status.status === 'completed') {
+                btn.innerText = 'Completed!';
+                clearInterval(interval);
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.innerText = 'Download to PC';
+                }, 3000);
+            } else if (status.status === 'error') {
+                btn.innerText = 'Error!';
+                clearInterval(interval);
+                alert('Download error: ' + status.error);
+                btn.disabled = false;
+                btn.innerText = 'Download to PC';
+            }
+        } catch (err) {
+            clearInterval(interval);
+        }
+    }, 1000);
 }
 
 async function resolveLink(link) {

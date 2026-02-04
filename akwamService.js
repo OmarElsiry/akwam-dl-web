@@ -1,9 +1,13 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 
+const fs = require('fs');
+const path = require('path');
+
 class AkwamService {
     constructor() {
         this.baseUrl = null;
+        this.activeDownloads = new Map(); // Track progress
     }
 
     async init() {
@@ -110,10 +114,9 @@ class AkwamService {
         const $1 = cheerio.load(res1.data);
 
         // Find the download button/link which usually has /download/ in it
-        // RGX_SHORTEN_URL = r'https?://(\w*\.*\w+\.\w+/download/.*?)"'
         let shortenUrl = '';
         $1('a').each((i, el) => {
-            const href = $(el).attr('href');
+            const href = $1(el).attr('href');
             if (href && href.includes('/download/')) {
                 shortenUrl = href;
             }
@@ -125,11 +128,9 @@ class AkwamService {
         const res2 = await axios.get(shortenUrl);
         const $2 = cheerio.load(res2.data);
 
-        // RGX_DIRECT_URL = r'([a-z0-9]{4,}\.\w+\.\w+/download/.*?)"'
-        // This is usually in a <script> or a hidden <a> tag
         let directLink = '';
         $2('a').each((i, el) => {
-            const href = $(el).attr('href');
+            const href = $2(el).attr('href');
             if (href && href.includes('/download/') && !href.includes(shortenUrl)) {
                 directLink = href;
             }
@@ -143,6 +144,83 @@ class AkwamService {
         }
 
         return directLink || shortenUrl; // Sometimes shortenUrl IS the direct one after redirect
+    }
+
+    async downloadFile(url, fileName) {
+        const downloadDir = path.join(process.cwd(), 'downloads');
+        if (!fs.existsSync(downloadDir)) {
+            fs.mkdirSync(downloadDir);
+        }
+
+        const safeName = fileName.replace(/[<>:"/\\|?*]/g, '_');
+        const filePath = path.join(downloadDir, safeName + '.mp4');
+        const downloadId = Date.now().toString();
+
+        this.activeDownloads.set(downloadId, {
+            name: fileName,
+            progress: 0,
+            status: 'starting'
+        });
+
+        // Background task
+        this._startDownload(downloadId, url, filePath);
+
+        return downloadId;
+    }
+
+    async _startDownload(id, url, filePath) {
+        try {
+            const { data, headers } = await axios({
+                url,
+                method: 'GET',
+                responseType: 'stream'
+            });
+
+            const totalLength = headers['content-length'];
+            let downloadedLength = 0;
+            const writer = fs.createWriteStream(filePath);
+
+            data.on('data', (chunk) => {
+                downloadedLength += chunk.length;
+                const progress = Math.round((downloadedLength / totalLength) * 100);
+                this.activeDownloads.set(id, {
+                    ...this.activeDownloads.get(id),
+                    progress,
+                    status: 'downloading'
+                });
+            });
+
+            data.pipe(writer);
+
+            return new Promise((resolve, reject) => {
+                writer.on('finish', () => {
+                    this.activeDownloads.set(id, {
+                        ...this.activeDownloads.get(id),
+                        progress: 100,
+                        status: 'completed',
+                        path: filePath
+                    });
+                    resolve();
+                });
+                writer.on('error', (err) => {
+                    this.activeDownloads.set(id, {
+                        ...this.activeDownloads.get(id),
+                        status: 'error',
+                        error: err.message
+                    });
+                    reject(err);
+                });
+            });
+        } catch (err) {
+            this.activeDownloads.set(id, {
+                status: 'error',
+                error: err.message
+            });
+        }
+    }
+
+    getDownloadStatus(id) {
+        return this.activeDownloads.get(id);
     }
 }
 

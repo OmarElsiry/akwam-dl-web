@@ -130,6 +130,19 @@ button:hover {
     align-items: center;
 }
 
+.btn-group {
+    display: flex;
+    gap: 10px;
+}
+
+.download-btn {
+    background-color: #27ae60;
+}
+
+.download-btn:hover {
+    background-color: #219150;
+}
+
 .dl-btn {
     padding: 8px 15px;
     font-size: 0.9rem;
