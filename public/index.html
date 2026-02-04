@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Akwam Downloader</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>Akwam Downloader</h1>
+
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="Search for movies or series...">
+            <select id="typeSelect">
+                <option value="movie">Movie</option>
+                <option value="series">Series</option>
+                <option value="show">TV Show</option>
+            </select>
+            <button onclick="performSearch()">Search</button>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loader" class="loader-container">
+            <div class="loader"></div>
+        </div>
+
+        <div id="results"></div>
+        <div id="details"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
