@@ -10,7 +10,10 @@ class AkwamService {
         if (!this.baseUrl) {
             const response = await axios.get('https://ak.sv/', {
                 maxRedirects: 5,
-                validateStatus: null
+                validateStatus: null,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                }
             });
             // Akwam often redirects to the current working domain
             this.baseUrl = response.request.res.responseUrl.replace(/\/$/, '');
@@ -23,7 +26,11 @@ class AkwamService {
         const baseUrl = await this.init();
         const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(query)}&section=${type}`;
 
-        const { data } = await axios.get(searchUrl);
+        const { data } = await axios.get(searchUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
         const $ = cheerio.load(data);
         const results = [];
 
@@ -58,7 +65,11 @@ class AkwamService {
     }
 
     async getEpisodes(seriesUrl) {
-        const { data } = await axios.get(seriesUrl);
+        const { data } = await axios.get(seriesUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
         const $ = cheerio.load(data);
         const episodes = [];
         const baseUrl = await this.init();
@@ -81,7 +92,11 @@ class AkwamService {
     }
 
     async getDownloadLinks(itemUrl) {
-        const { data } = await axios.get(itemUrl);
+        const { data } = await axios.get(itemUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
         const $ = cheerio.load(data);
         const qualities = [];
 
@@ -106,7 +121,11 @@ class AkwamService {
 
     async resolveDirectLink(linkUrl) {
         // Step 1: Follow the link to the intermediate page
-        const res1 = await axios.get(linkUrl);
+        const res1 = await axios.get(linkUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
         const $1 = cheerio.load(res1.data);
 
         // Find the download button/link which usually has /download/ in it
@@ -122,7 +141,11 @@ class AkwamService {
         if (!shortenUrl) throw new Error('Could not find intermediate download link');
 
         // Step 2: Get the direct URL from the shorten URL
-        const res2 = await axios.get(shortenUrl);
+        const res2 = await axios.get(shortenUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
         const $2 = cheerio.load(res2.data);
 
         // RGX_DIRECT_URL = r'([a-z0-9]{4,}\.\w+\.\w+/download/.*?)"'
