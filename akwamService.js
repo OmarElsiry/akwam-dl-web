@@ -3,71 +3,70 @@ const cheerio = require('cheerio');
 
 class AkwamService {
     constructor() {
-        this.baseUrl = null;
+        this.baseUrl = 'https://ak.sv';
         this.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
             'Referer': 'https://ak.sv/',
-            'Origin': 'https://ak.sv'
         };
-        // Free proxies to fallback to if Vercel is blocked
-        this.proxies = [
+
+        // List of ways to get the data
+        this.proxyTemplates = [
+            (url) => url, // Direct
             (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-            (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-            (url) => url // Direct
+            (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
         ];
     }
 
-    async init() {
-        if (!this.baseUrl) {
-            this.baseUrl = 'https://ak.sv'; // Default to start
-        }
-        return this.baseUrl;
-    }
-
+    /**
+     * The "Proxy Race": Fire all requests at once. The first one 
+     * that returns valid (non-blocked) content wins.
+     */
     async fetchWithProxy(url) {
-        let lastError = null;
-
-        // Try direct first, then proxies
-        for (const proxyFn of this.proxies) {
+        const fetchers = this.proxyTemplates.map(async (proxyFn) => {
             const finalUrl = proxyFn(url);
             try {
-                console.log(`Fetching: ${finalUrl}`);
-                const { data } = await axios.get(finalUrl, {
+                const response = await axios.get(finalUrl, {
                     headers: this.headers,
-                    timeout: 10000
+                    timeout: 6000 // Short timeout to fail fast
                 });
 
-                // If it's the "Just a moment" page, keep trying proxies
-                if (typeof data === 'string' && data.includes('Just a moment...')) {
-                    console.warn(`Cloudflare detected on ${finalUrl}, trying next...`);
-                    continue;
+                const data = response.data;
+                const content = typeof data === 'string' ? data : JSON.stringify(data);
+
+                // Validate that we didn't just get a Cloudflare block page
+                if (content.includes('Just a moment...') || content.includes('cloudflare-static')) {
+                    throw new Error('Blocked by Cloudflare');
                 }
 
-                return data;
+                return content;
             } catch (err) {
-                lastError = err;
-                console.error(`Fetch failed on ${finalUrl}: ${err.message}`);
+                // Silently fail so other promises can continue
+                throw err;
             }
+        });
+
+        // Promise.any takes the first one that successfully RESOLVES
+        try {
+            return await Promise.any(fetchers);
+        } catch (err) {
+            throw new Error('All proxies are blocked or too slow. Cloudflare won this round.');
         }
-        throw lastError || new Error('All fetch attempts failed');
     }
 
     async search(query, type = 'movie') {
-        const baseUrl = await this.init();
-        const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(query)}&section=${type}`;
-
+        const searchUrl = `${this.baseUrl}/search?q=${encodeURIComponent(query)}&section=${type}`;
         const data = await this.fetchWithProxy(searchUrl);
         const $ = cheerio.load(data);
         const results = [];
-        const regex = new RegExp([baseUrl, type, '\\d+', '.*?'].join('/'));
 
+        // Dynamic search for items
         $('a').each((i, el) => {
             const href = $(el).attr('href');
-            if (href && (regex.test(href) || href.includes(`/${type}/`))) {
+            if (href && href.includes(`/${type}/`)) {
                 const item = $(el).closest('.col-12, .col-6, .col-4, .col-3, .item');
-                let title = item.find('h3, h2, .entry-title').text().trim() || $(el).text().trim() || href.split('/').pop().replace(/-/g, ' ');
+                let title = item.find('h3, h2, .entry-title').text().trim() || $(el).text().trim();
                 if (!results.find(r => r.url === href) && title.length > 2) {
                     results.push({ title, url: href });
                 }
@@ -83,7 +82,7 @@ class AkwamService {
         $('a').each((i, el) => {
             const href = $(el).attr('href');
             if (href && href.includes('/episode/')) {
-                const title = $(el).text().trim() || href.split('/').pop().replace(/-/g, ' ');
+                const title = $(el).text().trim();
                 if (!episodes.find(e => e.url === href)) episodes.push({ title, url: href });
             }
         });
