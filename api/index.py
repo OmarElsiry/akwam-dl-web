@@ -4,18 +4,22 @@ from typing import Optional, List
 from .akwam_api import AkwamAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 import os
 
 app = FastAPI(title="Akwam DL API")
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", response_class=FileResponse)
 async def read_root():
-    index_path = os.path.join(os.path.dirname(__file__), "..", "index.html")
-    if os.path.exists(index_path):
-        with open(index_path, "r", encoding="utf-8") as f:
-            return f.read()
-    return "<h1>Akwam-DL API</h1><p>Frontend file not found.</p>"
+    return os.path.join(os.path.dirname(__file__), "..", "index.html")
+
+@app.get("/style.css")
+async def get_css():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "..", "style.css"))
+
+@app.get("/app.js")
+async def get_js():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "..", "app.js"))
 
 
 # Enable CORS for frontend interaction
