@@ -134,7 +134,7 @@ async function handleBulkResolve() {
     openModal('Bulk Resolving...');
     dom.modalList.innerHTML = `
         <div style="text-align:center; padding: 2rem;">
-            <p style="margin-bottom: 2rem; color: var(--text-dim);">Processing all episodes in parallel. This may take a few moments...</p>
+            <p style="margin-bottom: 2rem; color: var(--text-secondary);">Processing all episodes in parallel. This may take a few moments...</p>
             <div class="spinner" style="margin: 0 auto;"></div>
         </div>
     `;
@@ -144,7 +144,7 @@ async function handleBulkResolve() {
         if (data.results && data.results.length > 0) {
             const linksText = data.results.map(r => `${r.name}: ${r.url}`).join('\n');
             dom.modalList.innerHTML = `
-                <p style="margin-bottom: 1rem; color: var(--text-dim);">Done! Successfully resolved ${data.results.length} links.</p>
+                <p style="margin-bottom: 1rem; color: var(--text-secondary);">Done! Successfully resolved ${data.results.length} links.</p>
                 <textarea class="links-box" readonly>${linksText}</textarea>
                 <button class="btn-primary" style="width:100%; margin-top: 1rem;" onclick="copyBulkLinks(this)">COPY ALL LINKS</button>
             `;
@@ -191,7 +191,7 @@ async function resolveFinalUrl(link_id) {
 
     if (data.url) {
         dom.modalList.innerHTML = `
-            <p style="margin-bottom: 1rem; color: #94a3b8;">Your direct link is ready:</p>
+            <p style="margin-bottom: 1rem; color: var(--text-secondary);">Your direct link is ready:</p>
             <a href="${data.url}" class="btn-primary" style="display:block; text-align:center; text-decoration:none;" target="_blank">DOWNLOAD NOW</a>
         `;
         dom.finalUrl.innerText = data.url;
