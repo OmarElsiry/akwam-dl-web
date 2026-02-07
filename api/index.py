@@ -4,7 +4,19 @@ from typing import Optional, List
 from .akwam_api import AkwamAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi.responses import HTMLResponse
+import os
+
 app = FastAPI(title="Akwam DL API")
+
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
+    index_path = os.path.join(os.path.dirname(__file__), "..", "index.html")
+    if os.path.exists(index_path):
+        with open(index_path, "r", encoding="utf-8") as f:
+            return f.read()
+    return "<h1>Akwam-DL API</h1><p>Frontend file not found.</p>"
+
 
 # Enable CORS for frontend interaction
 app.add_middleware(
