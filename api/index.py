@@ -65,6 +65,14 @@ async def get_qualities(req: LinkRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/resolve")
+async def resolve(req: LinkRequest):
+    try:
+        url = akwam.resolve_direct_url(req.url)
+        return {"url": url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 class BulkResolveRequest(BaseModel):
     urls: List[Dict[str, str]] # List of {name: "...", url: "..."}
 
