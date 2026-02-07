@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Akwam-DL Premium</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Akwam<span>-DL</span></h1>
+            <p class="subtitle">Premium Direct Link Generator</p>
+        </header>
+
+        <section class="search-card">
+            <div class="input-group">
+                <div class="select-wrapper">
+                    <select id="searchType">
+                        <option value="movie">Movies</option>
+                        <option value="series">Series</option>
+                    </select>
+                </div>
+                <input type="text" id="searchInput" placeholder="Search for your favorite content..." autocomplete="off">
+                <button class="btn-primary" id="searchBtn">SEARCH</button>
+            </div>
+        </section>
+
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+        </div>
+
+        <div id="resultsGrid" class="results-grid">
+            <!-- Results will be injected here -->
+        </div>
+    </div>
+
+    <!-- Modal for Episodes/Qualities -->
+    <div id="overlay" class="overlay">
+        <div class="modal">
+            <button class="close-modal" id="closeModal">&times;</button>
+            <h2 id="modalTitle" style="margin-bottom: 1.5rem;">Select Option</h2>
+            <div id="modalList">
+                <!-- List will be injected here -->
+            </div>
+            <div id="finalUrl" class="url-reveal">
+                <!-- Final URL will be shown here -->
+            </div>
+            <div id="modalLoading" class="loading">
+                <div class="spinner"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
