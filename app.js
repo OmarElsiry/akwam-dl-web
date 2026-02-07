@@ -2,6 +2,7 @@ const state = {
     results: [],
     type: 'movie',
     currentUrl: '',
+    currentEpisodes: [],
 };
 
 const dom = {
@@ -52,6 +53,15 @@ async function apiResolve(url) {
     return await res.json();
 }
 
+async function apiBulkResolve(urls) {
+    const res = await fetch('/api/bulk-resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls })
+    });
+    return await res.json();
+}
+
 // --- UI Logic ---
 
 function showLoading(isLoading) {
@@ -96,9 +106,19 @@ async function handleItemClick(item, type) {
         openModal('Select Episode');
         showModalLoading(true);
         const data = await apiGetEpisodes(item.url);
+        state.currentEpisodes = data.episodes;
         showModalLoading(false);
 
-        data.episodes.forEach(ep => {
+        // Add Bulk Resolve Button
+        const bulkBtn = document.createElement('button');
+        bulkBtn.className = 'btn-primary';
+        bulkBtn.style.width = '100%';
+        bulkBtn.style.marginBottom = '1.5rem';
+        bulkBtn.innerText = `RESOLVE ALL (${state.currentEpisodes.length} EPISODES)`;
+        bulkBtn.onclick = handleBulkResolve;
+        dom.modalList.appendChild(bulkBtn);
+
+        state.currentEpisodes.forEach(ep => {
             const row = document.createElement('div');
             row.className = 'list-item';
             row.innerText = ep.name;
@@ -108,6 +128,41 @@ async function handleItemClick(item, type) {
     } else {
         handleQualitySelect(item.url);
     }
+}
+
+async function handleBulkResolve() {
+    openModal('Bulk Resolving...');
+    dom.modalList.innerHTML = `
+        <div style="text-align:center; padding: 2rem;">
+            <p style="margin-bottom: 2rem; color: var(--text-dim);">Processing all episodes in parallel. This may take a few moments...</p>
+            <div class="spinner" style="margin: 0 auto;"></div>
+        </div>
+    `;
+
+    try {
+        const data = await apiBulkResolve(state.currentEpisodes);
+        if (data.results && data.results.length > 0) {
+            const linksText = data.results.map(r => `${r.name}: ${r.url}`).join('\n');
+            dom.modalList.innerHTML = `
+                <p style="margin-bottom: 1rem; color: var(--text-dim);">Done! Successfully resolved ${data.results.length} links.</p>
+                <textarea class="links-box" readonly>${linksText}</textarea>
+                <button class="btn-primary" style="width:100%; margin-top: 1rem;" onclick="copyBulkLinks(this)">COPY ALL LINKS</button>
+            `;
+        } else {
+            dom.modalList.innerHTML = '<p style="color:var(--danger); text-align:center;">Failed to resolve any links. Try again later.</p>';
+        }
+    } catch (e) {
+        dom.modalList.innerHTML = '<p style="color:var(--danger); text-align:center;">Error during bulk resolution.</p>';
+    }
+}
+
+function copyBulkLinks(btn) {
+    const textarea = dom.modalList.querySelector('.links-box');
+    textarea.select();
+    document.execCommand('copy');
+    const originalText = btn.innerText;
+    btn.innerText = 'COPIED!';
+    setTimeout(() => btn.innerText = originalText, 2000);
 }
 
 async function handleQualitySelect(url) {

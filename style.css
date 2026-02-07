@@ -96,7 +96,8 @@ input[type="text"] {
     transition: all 0.3s ease;
 }
 
-input[type="text"]:focus, select:focus {
+input[type="text"]:focus,
+select:focus {
     outline: none;
     border-color: var(--primary);
     box-shadow: 0 0 0 2px rgba(0, 242, 254, 0.2);
@@ -238,14 +239,44 @@ button.btn-primary:hover {
     display: none;
 }
 
+.links-box {
+    width: 100%;
+    height: 150px;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 1rem;
+    color: var(--primary);
+    font-family: monospace;
+    font-size: 0.85rem;
+    resize: none;
+    margin-bottom: 1rem;
+    white-space: pre;
+    overflow-x: auto;
+}
+
 @keyframes fadeInDown {
-    from { opacity: 0; transform: translateY(-20px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 @keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* Loading State */
@@ -266,11 +297,18 @@ button.btn-primary:hover {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* Mobile adjustments */
 @media (max-width: 640px) {
-    .input-group { flex-direction: column; }
-    h1 { font-size: 2.5rem; }
+    .input-group {
+        flex-direction: column;
+    }
+
+    h1 {
+        font-size: 2.5rem;
+    }
 }

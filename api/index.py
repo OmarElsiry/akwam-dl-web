@@ -1,6 +1,6 @@
-from fastapi import FastAPI, HTTPException
+import asyncio
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict
 from .akwam_api import AkwamAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -63,13 +63,42 @@ async def get_qualities(req: LinkRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/resolve")
-async def resolve_url(req: LinkRequest):
+class BulkResolveRequest(BaseModel):
+    urls: List[Dict[str, str]] # List of {name: "...", url: "..."}
+
+@app.post("/api/bulk-resolve")
+async def bulk_resolve(req: BulkResolveRequest):
     try:
-        direct_url = akwam.resolve_direct_url(req.url)
-        if not direct_url:
-            raise HTTPException(status_code=404, detail="Could not resolve direct URL")
-        return {"url": direct_url}
+        # Use concurrent threads for resolution since it's I/O bound (network requests)
+        loop = asyncio.get_event_loop()
+        tasks = []
+        for item in req.urls:
+            tasks.append(loop.run_in_executor(None, akwam.get_qualities, item['url']))
+        
+        # 1. Get qualities for all episodes
+        all_qualities = await asyncio.gather(*tasks)
+        
+        # 2. Extract best quality (720p or first available) link_id for each
+        resolve_tasks = []
+        episode_names = []
+        for i, qualities in enumerate(all_qualities):
+            best_q = next((q for q in qualities if q['quality'] == '720p'), None)
+            if not best_q and qualities:
+                best_q = qualities[0]
+            
+            if best_q:
+                episode_names.append(req.urls[i]['name'])
+                resolve_tasks.append(loop.run_in_executor(None, akwam.resolve_direct_url, best_q['link_id']))
+
+        # 3. Resolve all direct URLs
+        direct_urls = await asyncio.gather(*resolve_tasks)
+        
+        results = []
+        for name, url in zip(episode_names, direct_urls):
+            if url:
+                results.append({"name": name, "url": url})
+        
+        return {"results": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
