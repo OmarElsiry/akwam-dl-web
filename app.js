@@ -156,6 +156,21 @@ async function handleBulkResolve() {
     }
 }
 
+async function copyLinkToClipboard(text, btn) {
+    try {
+        await navigator.clipboard.writeText(text);
+        const originalText = btn.innerText;
+        btn.innerText = 'COPIED!';
+        btn.classList.add('btn-success');
+        setTimeout(() => {
+            btn.innerText = originalText;
+            btn.classList.remove('btn-success');
+        }, 2000);
+    } catch (err) {
+        console.error('Failed to copy: ', err);
+    }
+}
+
 function copyBulkLinks(btn) {
     const textarea = dom.modalList.querySelector('.links-box');
     textarea.select();
@@ -184,20 +199,36 @@ async function handleQualitySelect(url) {
 }
 
 async function resolveFinalUrl(link_id) {
-    dom.modalList.innerHTML = '<p style="text-align:center; padding: 2rem;">Resolving direct link... please wait.</p>';
+    openModal('Finalizing Link');
+    dom.modalList.innerHTML = `
+        <div style="text-align:center; padding: 2rem;">
+            <p style="margin-bottom: 2rem; color: var(--text-secondary);">Securing your direct download link...</p>
+            <div class="spinner" style="margin: 0 auto;"></div>
+        </div>
+    `;
+
     showModalLoading(true);
     const data = await apiResolve(link_id);
     showModalLoading(false);
 
     if (data.url) {
+        // Clear modal for the final result
         dom.modalList.innerHTML = `
-            <p style="margin-bottom: 1rem; color: var(--text-secondary);">Your direct link is ready:</p>
-            <a href="${data.url}" class="btn-primary" style="display:block; text-align:center; text-decoration:none;" target="_blank">DOWNLOAD NOW</a>
+            <div class="result-container">
+                <p class="result-label">Direct Download Link:</p>
+                <div class="link-display-box">
+                    <code class="raw-url">${data.url}</code>
+                    <button class="btn-secondary btn-sm" onclick="copyLinkToClipboard('${data.url}', this)">COPY</button>
+                </div>
+                
+                <div style="margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
+                    <a href="${data.url}" class="btn-primary" style="display:block; text-align:center; text-decoration:none;" target="_blank">DOWNLOAD NOW</a>
+                    <p style="text-align:center; margin-top: 1rem; font-size: 0.75rem; color: var(--text-secondary);">Direct stream/download link. No ads or redirects.</p>
+                </div>
+            </div>
         `;
-        dom.finalUrl.innerText = data.url;
-        dom.finalUrl.style.display = 'block';
     } else {
-        dom.modalList.innerHTML = '<p style="color:var(--danger);">Error resolving link. Please try another quality.</p>';
+        dom.modalList.innerHTML = '<p style="color:var(--danger); text-align:center; padding: 2rem;">Error resolving link. Please try another quality.</p>';
     }
 }
 
