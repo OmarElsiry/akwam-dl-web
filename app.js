@@ -219,6 +219,12 @@ dom.searchBtn.onclick = async () => {
     }
 };
 
+dom.searchType.onchange = () => {
+    state.results = [];
+    dom.resultsGrid.innerHTML = '';
+    state.type = dom.searchType.value;
+};
+
 dom.searchInput.onkeypress = (e) => {
     if (e.key === 'Enter') dom.searchBtn.click();
 };

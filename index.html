@@ -15,46 +15,43 @@
     <div class="container">
         <header>
             <h1>Akwam<span>-DL</span></h1>
-            <p class="subtitle">Direct Link Generator & Bulk Resolver</p>
+            <p class="subtitle">Enterprise Link Resolution Utility</p>
         </header>
 
-        <section class="search-card">
-            <div class="input-group">
-                <div class="select-wrapper">
-                    <select id="searchType">
-                        <option value="movie">Movies</option>
-                        <option value="series">Series</option>
-                    </select>
+        <main>
+            <section class="search-card">
+                <div class="input-group">
+                    <div class="select-wrapper">
+                        <select id="searchType">
+                            <option value="movie" selected>Movies</option>
+                            <option value="series">Series</option>
+                        </select>
+                    </div>
+                    <input type="text" id="searchInput" placeholder="Enter title to search..." autocomplete="off">
+                    <button id="searchBtn" class="btn-primary">SEARCH</button>
                 </div>
-                <input type="text" id="searchInput" placeholder="Search for your favorite content..."
-                    autocomplete="off">
-                <button class="btn-primary" id="searchBtn">SEARCH</button>
+            </section>
+
+            <div id="loading" class="loading">
+                <div class="spinner"></div>
             </div>
-        </section>
 
-        <div id="loading" class="loading">
-            <div class="spinner"></div>
-        </div>
-
-        <div id="resultsGrid" class="results-grid">
-            <!-- Results will be injected here -->
-        </div>
+            <div id="resultsGrid" class="results-grid"></div>
+        </main>
     </div>
 
-    <!-- Modal for Episodes/Qualities -->
+    <!-- Modal System -->
     <div id="overlay" class="overlay">
         <div class="modal">
-            <button class="close-modal" id="closeModal">&times;</button>
-            <h2 id="modalTitle" style="margin-bottom: 1.5rem;">Select Option</h2>
-            <div id="modalList">
-                <!-- List will be injected here -->
-            </div>
-            <div id="finalUrl" class="url-reveal">
-                <!-- Final URL will be shown here -->
+            <div class="modal-header">
+                <div id="modalTitle" class="modal-title">Select Episode</div>
+                <button id="closeModal" class="close-modal">&times;</button>
             </div>
             <div id="modalLoading" class="loading">
                 <div class="spinner"></div>
             </div>
+            <div id="modalList" class="modal-body"></div>
+            <div id="finalUrl" style="display:none"></div>
         </div>
     </div>
 
