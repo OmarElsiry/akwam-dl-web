@@ -386,26 +386,102 @@ button.btn-primary:hover {
     }
 }
 
+/* Drawer Implementation */
+.drawer-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.3);
+    backdrop-filter: blur(2px);
+    z-index: 2000;
+    display: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.drawer-overlay.active {
+    display: block;
+    opacity: 1;
+}
+
+.drawer {
+    position: fixed;
+    top: 0;
+    right: -400px;
+    width: 400px;
+    height: 100%;
+    background: var(--bg-surface);
+    box-shadow: -10px 0 25px -5px rgb(0 0 0 / 0.1);
+    z-index: 2001;
+    transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+}
+
+.drawer.active {
+    right: 0;
+}
+
+.drawer-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(8px);
+    position: sticky;
+    top: 0;
+}
+
+.drawer-header h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.drawer-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.drawer-item {
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.drawer-item:hover {
+    border-color: var(--accent);
+    transform: translateX(-4px);
+    background: #f8fbff;
+}
+
+.drawer-item h4 {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.drawer-empty {
+    text-align: center;
+    padding: 3rem 1.5rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
 /* Responsiveness */
 @media (max-width: 640px) {
-    .container {
-        padding: 1.5rem;
-    }
-
-    .input-group {
-        flex-direction: column;
-    }
-
-    header {
-        margin-bottom: 2rem;
-    }
-
-    h1 {
-        font-size: 1.5rem;
-    }
-
-    .modal {
-        padding: 1rem;
+    .drawer {
+        width: 100%;
+        right: -100%;
     }
 }
 
