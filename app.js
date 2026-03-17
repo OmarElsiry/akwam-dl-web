@@ -298,12 +298,15 @@ async function handleItemClick(item, type, isBackAction = false) {
             dom.modalList.appendChild(row);
         });
     } else {
+        // For movies, we want a back button that just closes the modal
+        state.modalHistory.push(() => closeModal());
         handleQualitySelect(item.url);
     }
 }
 
 async function handleQualitySelect(url, isBackAction = false) {
     // If not a back action and it's a series, we should already have a history item (the episode list)
+    // If it's a movie, we pushed a "closeModal" action in handleItemClick
     openModal('Select Quality', !isBackAction && state.modalHistory.length === 0);
     showModalLoading(true);
     const data = await apiGetQualities(url);
