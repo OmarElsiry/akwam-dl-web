@@ -1,3 +1,4 @@
+import typing
 import re, os
 from requests import get
 
@@ -14,16 +15,17 @@ WATCH_HTML_CMD = 'data:text/html,<html><body><video controls><source src="{}" ty
 
 class Akwam:
 
-    def __init__(self, url):
+    def __init__(self, url: str):
         url = get(url).url
         self.url = [url, url[:-1]][url[-1] == '/']
         self.search_url = self.url + '/search?q='
-        self.cur_page = None
-        self.qualities = {}
-        self.results = None
-        self.parsed = None
-        self.dl_url = None
-        self.type = 'movie'
+        self.cur_page: typing.Any = None
+        self.qualities: typing.Dict[str, str] = {}
+        self.results: typing.Dict[str, str] = {}
+        self.parsed: typing.List[str] = []
+        self.dl_url: str = ""
+        self.cur_url: str = ""
+        self.type: str = 'movie'
 
     def select(self, choice, is_index=False):
         if is_index:
@@ -39,7 +41,7 @@ class Akwam:
     def load(self):
         self.cur_page = get(self.cur_url)
         self.parse(RGX_QUALITY_TAG, no_multi_line=True)
-        i = 0
+        i: int = 0
         for q in ['1080p', '720p', '480p']:
             if f'>{q}</' in self.cur_page.text:
                 self.qualities[q] = self.parsed[i]
@@ -53,7 +55,7 @@ class Akwam:
         self.parse(rf'({self.url}/{self.type}/\d+/.*?)"')
         self.results = {
             url.split('/')[-1].replace('-', ' ').title(): url \
-                for url in self.parsed[::-1]
+                for url in reversed(self.parsed)
         }
 
     def fetch_episodes(self):
@@ -61,7 +63,7 @@ class Akwam:
         self.parse(rf'({self.url}/episode/\d+/.*?)"')
         self.results = {
             url.split('/')[-1].replace('-', ' ').title(): url \
-                for url in self.parsed[::-1]
+                for url in reversed(self.parsed)
         }
 
     def get_direct_url(self, quality='720p'):
