@@ -29,10 +29,12 @@
             <section class="search-card">
                 <div class="input-group">
                     <div class="select-wrapper">
-                        <select id="searchType">
-                            <option value="movie" selected>Movies</option>
-                            <option value="series">Series</option>
-                        </select>
+                        <div class="search-type-container">
+                            <div class="search-switch" id="searchTypeSwitch">
+                                <button type="button" class="switch-opt active" data-value="movie">Movies</button>
+                                <button type="button" class="switch-opt" data-value="series">Series</button>
+                            </div>
+                        </div>
                     </div>
                     <input type="text" id="searchInput" placeholder="Enter title to search..." autocomplete="off">
                     <button id="searchBtn" class="btn-primary">SEARCH</button>

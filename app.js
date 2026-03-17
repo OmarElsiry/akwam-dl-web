@@ -1,6 +1,6 @@
 const state = {
     results: [],
-    type: 'movie',
+    type: 'movie', // Default type
     currentUrl: '',
     currentEpisodes: [],
     favorites: JSON.parse(localStorage.getItem('akwamFavorites')) || [],
@@ -10,7 +10,6 @@ const state = {
 const dom = {
     searchBtn: document.getElementById('searchBtn'),
     searchInput: document.getElementById('searchInput'),
-    searchType: document.getElementById('searchType'),
     resultsGrid: document.getElementById('resultsGrid'),
     loading: document.getElementById('loading'),
     overlay: document.getElementById('overlay'),
@@ -22,12 +21,35 @@ const dom = {
     finalUrl: document.getElementById('finalUrl'),
     favoritesBtn: document.getElementById('favoritesBtn'),
     
+    // Switch elements
+    searchTypeSwitch: document.getElementById('searchTypeSwitch'),
+    switchOpts: document.querySelectorAll('.switch-opt'),
+    
     // Drawer elements
     drawer: document.getElementById('drawer'),
     drawerOverlay: document.getElementById('drawerOverlay'),
     favoritesList: document.getElementById('favoritesList'),
     closeDrawer: document.getElementById('closeDrawer')
 };
+
+// --- Initialization ---
+
+// Initialize switch listeners
+dom.switchOpts.forEach(opt => {
+    opt.onclick = () => {
+        dom.switchOpts.forEach(o => o.classList.remove('active'));
+        opt.classList.add('active');
+        state.type = opt.dataset.value;
+        
+        // Optional: Clear results when switching type to keep it clean
+        state.results = [];
+        dom.resultsGrid.innerHTML = '';
+    };
+});
+
+// Set initial state from active toggle
+const activeOpt = Array.from(dom.switchOpts).find(o => o.classList.contains('active'));
+if (activeOpt) state.type = activeOpt.dataset.value;
 
 // --- API Calls ---
 
@@ -88,8 +110,10 @@ function openModal(title, disableBack = false) {
     dom.finalUrl.style.display = 'none';
     dom.overlay.style.display = 'flex';
     
+    // Check if we should show back button
+    // We show it if modalHistory is NOT empty AND it hasn't been explicitly disabled
     if (state.modalHistory.length > 0 && !disableBack) {
-        dom.modalBackBtn.style.display = 'block';
+        dom.modalBackBtn.style.display = 'flex'; // Use flex for better alignment
     } else {
         dom.modalBackBtn.style.display = 'none';
     }
@@ -279,6 +303,7 @@ async function handleItemClick(item, type, isBackAction = false) {
 }
 
 async function handleQualitySelect(url, isBackAction = false) {
+    // If not a back action and it's a series, we should already have a history item (the episode list)
     openModal('Select Quality', !isBackAction && state.modalHistory.length === 0);
     showModalLoading(true);
     const data = await apiGetQualities(url);
@@ -419,13 +444,12 @@ async function copyLinkToClipboard(text, btn) {
 
 async function doSearch() {
     const q = dom.searchInput.value.trim();
-    const type = dom.searchType.value;
+    const type = state.type; // Use state variable updated by switch
     if (!q) return;
 
     showLoading(true);
     dom.resultsGrid.innerHTML = '';
     state.results = [];
-    state.type = type;
 
     try {
         const data = await apiSearch(q, type);
@@ -440,12 +464,6 @@ async function doSearch() {
 }
 
 dom.searchBtn.onclick = doSearch;
-
-dom.searchType.onchange = () => {
-    state.results = [];
-    dom.resultsGrid.innerHTML = '';
-    state.type = dom.searchType.value;
-};
 
 dom.searchInput.onkeypress = (e) => {
     if (e.key === 'Enter') doSearch();
