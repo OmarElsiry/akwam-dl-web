@@ -3,7 +3,7 @@ const state = {
     type: 'movie', // Default type
     currentUrl: '',
     currentEpisodes: [],
-    favorites: JSON.parse(localStorage.getItem('akwamFavorites')) || [],
+    favorites: JSON.parse(localStorage.getItem('vortexFavorites')) || [],
     modalHistory: []
 };
 
@@ -199,7 +199,7 @@ function toggleFavorite(item, type) {
     } else {
         state.favorites.push({ ...item, type });
     }
-    localStorage.setItem('akwamFavorites', JSON.stringify(state.favorites));
+    localStorage.setItem('vortexFavorites', JSON.stringify(state.favorites));
     
     // Refresh both views if they are visible
     renderResults(state.results, state.type);
