@@ -37,12 +37,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.1);
+    background: #cbd5e1;
     border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 0, 0, 0.2);
+    background: #94a3b8;
 }
 
 /* For Firefox */
@@ -250,6 +250,7 @@ button.btn-primary:hover {
     border-radius: var(--radius);
     width: 100%;
     max-width: 550px;
+    max-height: 90vh;
     box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.5);
     display: flex;
     flex-direction: column;
@@ -283,6 +284,7 @@ button.btn-primary:hover {
 .modal-body {
     padding: 1.5rem;
     overflow-y: auto;
+    flex: 1;
 }
 
 .list-item {
