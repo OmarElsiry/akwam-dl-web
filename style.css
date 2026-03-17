@@ -142,6 +142,58 @@ button.btn-primary:hover {
     color: var(--text-primary);
 }
 
+.result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+}
+
+.fav-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #cbd5e1;
+    transition: color 0.2s, transform 0.2s;
+    padding: 0.25rem;
+}
+
+.fav-toggle.active {
+    color: var(--danger);
+}
+
+.fav-toggle:hover {
+    transform: scale(1.1);
+}
+
+.btn-icon {
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+}
+
+.btn-icon:hover {
+    background-color: rgba(0,0,0,0.05);
+}
+
+.heartbeat {
+    animation: heartbeat 1.5s ease-in-out infinite both;
+}
+
+@keyframes heartbeat {
+  from { transform: scale(1); transform-origin: center center; animation-timing-function: ease-out; }
+  10% { transform: scale(0.91); animation-timing-function: ease-in; }
+  17% { transform: scale(0.98); animation-timing-function: ease-out; }
+  33% { transform: scale(0.87); animation-timing-function: ease-in; }
+  45% { transform: scale(1); animation-timing-function: ease-out; }
+}
+
 .type-badge {
     align-self: flex-start;
     padding: 0.125rem 0.625rem;

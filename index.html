@@ -13,9 +13,16 @@
 
 <body>
     <div class="container">
-        <header>
-            <h1>Akwam<span>-DL</span></h1>
-            <p class="subtitle">Enterprise Link Resolution Utility</p>
+        <header style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h1>Akwam<span>-DL</span></h1>
+                <p class="subtitle">Enterprise Link Resolution Utility</p>
+            </div>
+            <button id="favoritesBtn" class="btn-icon heartbeat" title="View Favorites">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="var(--danger)" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                </svg>
+            </button>
         </header>
 
         <main>
@@ -44,7 +51,12 @@
     <div id="overlay" class="overlay">
         <div class="modal">
             <div class="modal-header">
-                <div id="modalTitle" class="modal-title">Select Episode</div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <button id="modalBackBtn" class="btn-icon" style="display: none; padding: 0.25rem;" title="Go Back">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><polyline points="12 19 5 12 12 5"></polyline></svg>
+                    </button>
+                    <div id="modalTitle" class="modal-title">Select Episode</div>
+                </div>
                 <button id="closeModal" class="close-modal">&times;</button>
             </div>
             <div id="modalLoading" class="loading">
