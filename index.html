@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vortex Premium</title>
+    <title id="pageTitle">Vortex Premium</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -15,7 +15,16 @@
     <div class="container">
         <header style="display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <h1>Vortex</h1>
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <div id="brandIcon" class="brand-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                            <path d="M2 17l10 5 10-5"></path>
+                            <path d="M2 12l10 5 10-5"></path>
+                        </svg>
+                    </div>
+                    <h1 id="brandName">Vortex</h1>
+                </div>
                 <p class="subtitle">Enterprise Link Resolution Utility</p>
             </div>
             <button id="favoritesBtn" class="btn-icon heartbeat" title="View Favorites">

@@ -3,8 +3,9 @@ const state = {
     type: 'movie', // Default type
     currentUrl: '',
     currentEpisodes: [],
-    favorites: JSON.parse(localStorage.getItem('vortexFavorites')) || [],
-    modalHistory: []
+    favorites: [],
+    modalHistory: [],
+    storageKey: 'vortexFavorites'
 };
 
 const dom = {
@@ -29,10 +30,34 @@ const dom = {
     drawer: document.getElementById('drawer'),
     drawerOverlay: document.getElementById('drawerOverlay'),
     favoritesList: document.getElementById('favoritesList'),
-    closeDrawer: document.getElementById('closeDrawer')
+    closeDrawer: document.getElementById('closeDrawer'),
+    
+    // Dynamic brand elements
+    brandName: document.getElementById('brandName'),
+    pageTitle: document.getElementById('pageTitle')
 };
 
-// --- Initialization ---
+// --- Branding & Identity ---
+
+function updateBranding() {
+    const host = window.location.hostname;
+    let name = "Vortex";
+    
+    if (host.includes('lazyus')) {
+        name = "Lazyus";
+    } else if (host.includes('zilos')) {
+        name = "Zilos";
+    }
+    
+    if (dom.brandName) dom.brandName.innerText = name;
+    if (dom.pageTitle) dom.pageTitle.innerText = `${name} Premium`;
+    
+    // Update storage key to be unique per brand
+    state.storageKey = `${name.toLowerCase()}Favorites`;
+    state.favorites = JSON.parse(localStorage.getItem(state.storageKey)) || [];
+}
+
+updateBranding();
 
 // Initialize switch listeners
 dom.switchOpts.forEach(opt => {
@@ -199,7 +224,7 @@ function toggleFavorite(item, type) {
     } else {
         state.favorites.push({ ...item, type });
     }
-    localStorage.setItem('vortexFavorites', JSON.stringify(state.favorites));
+    localStorage.setItem(state.storageKey, JSON.stringify(state.favorites));
     
     // Refresh both views if they are visible
     renderResults(state.results, state.type);
