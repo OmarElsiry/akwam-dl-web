@@ -32,6 +32,11 @@ const dom = {
     favoritesList: document.getElementById('favoritesList'),
     closeDrawer: document.getElementById('closeDrawer'),
     
+    // Donation modal
+    donateBtn: document.getElementById('donateBtn'),
+    donationOverlay: document.getElementById('donationOverlay'),
+    closeDonation: document.getElementById('closeDonation'),
+    
     // Dynamic brand elements
     brandName: document.getElementById('brandName'),
     pageTitle: document.getElementById('pageTitle')
@@ -134,14 +139,7 @@ function openModal(title, disableBack = false) {
     dom.modalList.innerHTML = '';
     dom.finalUrl.style.display = 'none';
     dom.overlay.style.display = 'flex';
-    
-    // Check if we should show back button
-    // We show it if modalHistory is NOT empty AND it hasn't been explicitly disabled
-    if (state.modalHistory.length > 0 && !disableBack) {
-        dom.modalBackBtn.style.display = 'flex'; // Use flex for better alignment
-    } else {
-        dom.modalBackBtn.style.display = 'none';
-    }
+    dom.modalBackBtn.style.display = showBack ? 'flex' : 'none';
 }
 
 function closeModal() {
@@ -158,9 +156,43 @@ dom.modalBackBtn.onclick = () => {
 
 dom.closeModal.onclick = closeModal;
 
-dom.overlay.onclick = (e) => {
-    if (e.target === dom.overlay) closeModal();
+// Donation listeners
+if (dom.donateBtn) {
+    dom.donateBtn.onclick = () => {
+        dom.donationOverlay.classList.add('active');
+    };
+}
+
+if (dom.closeDonation) {
+    dom.closeDonation.onclick = () => {
+        dom.donationOverlay.classList.remove('active');
+    };
+}
+
+// Helper: Copy to clipboard
+window.copyToClipboard = async (text, btn) => {
+    try {
+        await navigator.clipboard.writeText(text);
+        const originalText = btn.innerText;
+        btn.innerText = 'COPIED!';
+        btn.classList.add('btn-success');
+        setTimeout(() => {
+            btn.innerText = originalText;
+            btn.classList.remove('btn-success');
+        }, 2000);
+    } catch (err) {
+        console.error('Failed to copy!', err);
+    }
 };
+
+// Global click to close modals
+window.addEventListener('click', (e) => {
+    if (e.target === dom.overlay) closeModal();
+    if (e.target === dom.drawerOverlay) closeDrawer();
+    if (e.target === dom.donationOverlay) {
+        dom.donationOverlay.classList.remove('active');
+    }
+});
 
 // --- Drawer Logic ---
 
