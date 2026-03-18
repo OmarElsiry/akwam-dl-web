@@ -3,10 +3,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict
-from .akwam_api import AkwamAPI
+from api.akwam_api import AkwamAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 import os
 
 app = FastAPI(title="Akwam DL API")
@@ -22,6 +23,9 @@ async def get_css():
 @app.get("/app.js")
 async def get_js():
     return FileResponse(os.path.join(os.path.dirname(__file__), "..", "app.js"))
+
+# Mount static files from project root
+app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "..")), name="static")
 
 
 # Enable CORS for frontend interaction
