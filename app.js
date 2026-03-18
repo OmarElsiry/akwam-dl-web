@@ -134,7 +134,7 @@ function showModalLoading(isLoading) {
     dom.modalLoading.style.display = isLoading ? 'flex' : 'none';
 }
 
-function openModal(title, disableBack = false) {
+function openModal(title, showBack = false) {
     dom.modalTitle.innerText = title;
     dom.modalList.innerHTML = '';
     dom.finalUrl.style.display = 'none';
@@ -308,7 +308,7 @@ async function handleItemClick(item, type, isBackAction = false) {
         openModal('Select Episode', !isBackAction && state.modalHistory.length === 0);
         showModalLoading(true);
         const data = await apiGetEpisodes(item.url);
-        state.currentEpisodes = data.episodes;
+        state.currentEpisodes = data.episodes || [];
         showModalLoading(false);
 
         const currentViewRenderer = () => handleItemClick(item, type, true);
@@ -364,7 +364,7 @@ async function handleItemClick(item, type, isBackAction = false) {
 async function handleQualitySelect(url, isBackAction = false) {
     // If not a back action and it's a series, we should already have a history item (the episode list)
     // If it's a movie, we pushed a "closeModal" action in handleItemClick
-    openModal('Select Quality', !isBackAction && state.modalHistory.length === 0);
+    openModal('Select Quality', true);
     showModalLoading(true);
     const data = await apiGetQualities(url);
     showModalLoading(false);

@@ -51,7 +51,8 @@ class AkwamAPI:
         response = safe_get(series_url)
         page_content = response.content.decode()
         
-        pattern = rf'({self.base_url}/episode/\d+/.*?)["\s]'
+        # More flexible pattern for episode links, accounting for potential variations in Akwam URL structure
+        pattern = rf'({self.base_url}/episode/\d+[^"\s]*)'
         matches = re.findall(pattern, page_content)
         
         episodes = []
