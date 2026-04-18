@@ -51,6 +51,10 @@ class EgyDeadAPI:
                 slug = url.rstrip('/').split('/')[-1]
                 name = unquote(slug).replace('-', ' ').strip()
             
+            # Skip root domain
+            if 'egydead' in slug and '.' in slug:
+                continue
+            
             skip = False
             for part in SKIP_URL_PARTS:
                 if part in url:
