@@ -96,38 +96,55 @@ class EgyDeadAPI:
 
     def get_watch_url(self, content_url: str) -> dict:
         """Scrape a movie/episode page and return embed or direct video URLs."""
-        result = self.client.scrape(content_url, formats=['html', 'markdown'])
+        # Use actions to click the watch/download button to expose the servers
+        result = self.client.scrape(content_url, formats=['html', 'markdown'], actions=[
+            {"type": "wait", "milliseconds": 2000},
+            {"type": "click", "selector": ".watchNow button"},
+            {"type": "wait", "milliseconds": 3000},
+        ])
         html = result.html or ''
 
-        # 1. iframes (most common – external player)
-        all_iframes = re.findall(
-            r'<iframe[^>]+src=["\']([^"\']+)["\']',
-            html, re.IGNORECASE
-        )
-        embed_urls = [
-            src for src in all_iframes
-            if any(h in src.lower() for h in VIDEO_HOSTS)
-            and 'recaptcha' not in src
-            and 'facebook.com/plugins' not in src
-        ]
+        # 1. Parse Servers from the "serversList" injected by the button click
+        servers = []
+        # Pattern looks for <li data-link="URL">...<p>ServerName</p>...</li>
+        pattern = r'<li[^>]*data-link=["\']([^"\']+)["\'][^>]*>.*?<p>([^<]+)</p>'
+        for match in re.finditer(pattern, html, re.DOTALL | re.IGNORECASE):
+            url, name = match.groups()
+            servers.append({'name': name.strip(), 'url': url.strip()})
 
-        # 2. Direct video files (.mp4 / .m3u8)
+        # 2. Fallback: Parse iframes (most common – external player)
+        if not servers:
+            all_iframes = re.findall(
+                r'<iframe[^>]+src=["\']([^"\']+)["\']',
+                html, re.IGNORECASE
+            )
+            embed_urls = [
+                src for src in all_iframes
+                if any(h in src.lower() for h in VIDEO_HOSTS)
+                and 'recaptcha' not in src
+                and 'facebook.com/plugins' not in src
+            ]
+            for i, url in enumerate(embed_urls[:5]):
+                servers.append({'name': f'Server {i+1}', 'url': url})
+
+        # 3. Direct video files (.mp4 / .m3u8) (fallback for direct play)
         direct_urls = list(dict.fromkeys(re.findall(
             r'(https?://[^\s"\'<>]+\.(?:mp4|m3u8|mkv)[^\s"\'<>]*)',
             html
         )))
 
-        # 3. Fallback – try data-src attributes
-        if not embed_urls:
+        # 4. Fallback – try data-src attributes
+        if not servers and not direct_urls:
             ds = re.findall(r'data-src=["\']([^"\']+)["\']', html, re.IGNORECASE)
             embed_urls = [u for u in ds if any(h in u.lower() for h in VIDEO_HOSTS)]
+            for i, url in enumerate(embed_urls[:5]):
+                servers.append({'name': f'Server {i+1}', 'url': url})
 
         return {
-            'embed_urls': embed_urls[:5],
+            'servers': servers,
             'direct_urls': direct_urls[:3],
             'page_url': content_url
         }
-
     # ------------------------------------------------------------------ #
     #  Utilities
     # ------------------------------------------------------------------ #

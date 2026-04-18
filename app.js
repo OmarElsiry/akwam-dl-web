@@ -526,18 +526,18 @@ async function egyDeadShowWatch(item) {
 }
 
 function egyDeadRenderWatch(data, item) {
-    const embedUrls  = data.embed_urls  || [];
+    const servers  = data.servers  || [];
     const directUrls = data.direct_urls || [];
 
-    // ── Case 1: we have an embed iframe ──────────────────────
-    if (embedUrls.length > 0) {
+    // ── Case 1: we have servers ──────────────────────
+    if (servers.length > 0) {
         dom.mainModal.classList.add('modal-wide');
         dom.modalTitle.innerText = item.name;
 
         let serverBtns = '';
-        if (embedUrls.length > 1) {
-            serverBtns = embedUrls.map((u, i) =>
-                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${u}" onclick="egyDeadSwitchServer(this)">Server ${i + 1}</button>`
+        if (servers.length > 1) {
+            serverBtns = servers.map((s, i) =>
+                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${s.url}" onclick="egyDeadSwitchServer(this)">${s.name}</button>`
             ).join('');
         }
 
@@ -545,7 +545,7 @@ function egyDeadRenderWatch(data, item) {
             <div class="watch-container">
                 ${serverBtns ? `<div class="server-row">${serverBtns}</div>` : ''}
                 <div class="embed-frame-wrap">
-                    <iframe id="egyDeadFrame" src="${embedUrls[0]}"
+                    <iframe id="egyDeadFrame" src="${servers[0].url}"
                         frameborder="0" allowfullscreen allow="autoplay; fullscreen"
                         sandbox="allow-scripts allow-same-origin allow-forms allow-popups">
                     </iframe>
