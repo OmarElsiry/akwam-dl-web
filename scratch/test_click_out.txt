@@ -1,0 +1,18 @@
+﻿Sending scrape request with click action on .watchNow button...
+Success. Returned HTML length: 55636
+Iframes found: 0
+Found serversList!
+  StreamRuby
+  StreamHG
+  EarnVids
+  Mixdrop
+  Voe
+  Forafile
+Found server item: StreamHG (class: None) [data-url: None] [data-targer: None]
+Found server item: Mixdrop (class: None) [data-url: None] [data-targer: None]
+Found server item: Forafile (class: None) [data-url: None] [data-targer: None]
+Found server item: Mixdrop
+
+1080p
+
+╪¡┘à┘ä ╪º┘ä╪º┘å (class: None) [data-url: None] [data-targer: None]

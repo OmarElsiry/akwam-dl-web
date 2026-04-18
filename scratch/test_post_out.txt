@@ -1,0 +1,14 @@
+﻿python : C:\Users\PotterParker\Desktop\yt\akwam-dl\scratch\test_post.py:44: DeprecationWarning: The 'text' argument to 
+find()-type methods is deprecated. Use 'string' instead.
+At line:1 char:1
++ python scratch/test_post.py 2>&1 | Out-File -Encoding utf8 scratch/te ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (C:\Users\Potter...tring' instead.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  el = soup.find(text=lambda t: t and server_name.lower() in t.lower())
+POSTing to https://tv8.egydead.live/avatar-3-fire-and-ash-2025-1080p-web-dl/
+Status Code: 403
+Raw response length: 5006
+Iframes found: 0
+Done

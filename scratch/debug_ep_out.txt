@@ -1,0 +1,30 @@
+﻿Scraping: https://tv8.egydead.live/season/batman-caped-crusader-season-1/
+Matches found in markdown (Pattern 1): 101
+  - [OTHER] ┘à╪┤╪º┘ç╪»╪⌐ ┘ü┘è┘ä┘à Shelter 2026 ┘à╪¬╪▒╪¼┘à: https://tv8.egydead.live/shelter-2026-1080p-bluray/
+  - [OTHER] ┘à╪┤╪º┘ç╪»╪⌐ ┘ü┘è┘ä┘à Avatar 3 Fire and Ash 2025 ┘à╪¬╪▒╪¼┘à: https://tv8.egydead.live/avatar-3-fire-and-ash-2025-1080p-web-dl/
+  - [OTHER] ┘à╪┤╪º┘ç╪»╪⌐ ┘ü┘è┘ä┘à Sinners 2025 ┘à╪¬╪▒╪¼┘à: https://tv8.egydead.live/%d9%85%d8%b4%d8%a7%d9%87%d8%af%d8%a9-%d9%81%d9%8a%d9%84%d9%85-sinners-2025-%d9%85%d8%aa%d8%b1%d8%ac%d9%85/
+  - [OTHER] ┘à╪┤╪º┘ç╪»╪⌐ ┘ü┘è┘ä┘à Predator Badlands 2025 ┘à╪¬╪▒╪¼┘à: https://tv8.egydead.live/predator-badlands-2025-1080p-bluray-1/
+  - [OTHER] ┘à╪┤╪º┘ç╪»╪⌐ ┘ü┘è┘ä┘à Demon Slayer Infinity Castle 2025 ┘à╪¬╪▒╪¼┘à: https://tv8.egydead.live/demon-slayer-infinity-castle-2025-1080p-webrip-1/
+  - [OTHER] ┘ü┘è┘ä┘à ╪º┘ü╪º╪¬╪º╪▒ 3 ╪º┘ä┘å╪º╪▒ ┘ê╪º┘ä╪▒┘à╪º╪» 2025 ┘à╪»╪¿┘ä╪¼: https://tv8.egydead.live/avatar-3-fire-and-ash-2025-1080p-web-dl-ar/
+  - [OTHER] ┘à╪┤╪º┘ç╪»╪⌐ ┘ü┘è┘ä┘à Avatar Aang The Last Airbender 2026 ┘à╪¬╪▒╪¼┘à: https://tv8.egydead.live/avatar-the-legend-of-aang-the-last-airbender-2026-1080p-webrip/
+  - [EP] ┘à╪│┘ä╪│┘ä The Boys ╪º┘ä┘à┘ê╪│┘à ╪º┘ä╪«╪º┘à╪│ ╪º┘ä╪¡┘ä┘é╪⌐ 3 ┘à╪¬╪▒╪¼┘à╪⌐: https://tv8.egydead.live/episode/the-boys-s05e03-1/
+  - [EP] ┘à╪│┘ä╪│┘ä Invincible ╪º┘ä┘à┘ê╪│┘à ╪º┘ä╪▒╪º╪¿╪╣ ╪º┘ä╪¡┘ä┘é╪⌐ 7 ┘à╪¬╪▒╪¼┘à╪⌐: https://tv8.egydead.live/episode/invincible-2021-s04e07/
+  - [EP] ┘à╪│┘ä╪│┘ä Daredevil Born Again ╪º┘ä┘à┘ê╪│┘à ╪º┘ä╪½╪º┘å┘è ╪º┘ä╪¡┘ä┘é╪⌐ 5 ┘à╪¬╪▒╪¼┘à╪⌐: https://tv8.egydead.live/episode/daredevil-born-again-s02e05/
+Matches found in HTML (href contains /episode/): 63
+  - https://tv8.egydead.live/episode/the-boys-s05e03-1/
+  - https://tv8.egydead.live/episode/invincible-2021-s04e07/
+  - https://tv8.egydead.live/episode/daredevil-born-again-s02e05/
+  - https://tv8.egydead.live/episode/mehmed-sultan-e76/
+  - https://tv8.egydead.live/episode/euphoria-us-s03e01/
+  - https://tv8.egydead.live/episode/one-piece-e1157/
+  - https://tv8.egydead.live/episode/yomi-no-tsugai-e02/
+  - https://tv8.egydead.live/episode/kurulus-orhan-e21/
+  - https://tv8.egydead.live/episode/bloodhounds-s02e01/
+  - https://tv8.egydead.live/episode/jigokuraku-s02e12-1/
+EgyDeadAPI style parser found: 57 episodes
+
+--- Markdown Snippet ---
+4-The-Boys-%D8%A7%D9%84%D9%85%D9%88%D8%B3%D9%85-%D8%A7%D9%84%D8%AE%D8%A7%D9%85%D8%B3-1-225x280.jpg)**┘à╪│┘ä╪│┘ä The Boys ╪º┘ä┘à┘ê╪│┘à ╪º┘ä╪«╪º┘à╪│ ╪º┘ä╪¡┘ä┘é╪⌐ 3 ┘à╪¬╪▒╪¼┘à╪⌐** ┘à╪│┘ä╪│┘ä╪º╪¬ ╪º╪¼┘å╪¿┘è**╪¡┘ä┘é┘ç** _3_](https://tv8.egydead.live/episode/the-boys-s05e03-1/ "┘à╪│┘ä╪│┘ä The Boys ╪º┘ä┘à┘ê╪│┘à ╪º┘ä╪«╪º┘à╪│ ╪º┘ä╪¡┘ä┘é╪⌐ 3 ┘à╪¬╪▒╪¼┘à╪⌐")
+- [![](https://tv8.egydead.live/wp-content/uploads/2026/03/%D9%85%D8%B3%D9%84%D8%B3%D9%84-Invincible-%D8%A7%D9%84%D9%85%D9%88%D8%B3%D9%85-%D8%A7%D9%84%D8%B1%D8%A7%D8%A8%D8%B9-%D9%85%D8%AA%D8%B1%D8%AC%D9%85-%D9%83%D8%A7%D9%85%D9%84-221x280.jpg)**┘à╪│┘ä╪│┘ä Invincible ╪º┘ä┘à┘ê╪│┘à ╪º┘ä╪▒╪º╪¿╪╣ ╪º┘ä╪¡┘ä┘é╪⌐ 7 ┘à╪¬╪▒╪¼┘à╪⌐** ┘à╪│┘ä╪│┘ä╪º╪¬ ┘â╪▒╪¬┘ê┘å**╪¡┘ä┘é┘ç** _7_](https://tv8.egydead.live/episode/invincible-2021-s04e07/ "┘à╪│┘ä╪│┘ä Invincible ╪º┘ä┘à┘ê╪│┘à ╪º┘ä╪▒╪º╪¿╪╣ ╪º┘ä╪¡┘ä┘é╪⌐ 7 ┘à╪¬╪▒╪¼┘à╪⌐
+------------------------
+

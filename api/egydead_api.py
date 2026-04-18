@@ -34,33 +34,28 @@ class EgyDeadAPI:
         return self._parse_search_results(result.markdown or '')
 
     def _parse_search_results(self, markdown: str) -> list:
+        """Parse search result links from markdown."""
         results = []
-        seen_urls: set = set()
-
-        # Each result row looks like:
-        # **Title text** category text](https://tv8.egydead.live/slug/ "title")
-        pattern = r'\*\*([^*\n]+)\*\*[^\]]*\]\((https?://[^)\s"]+)'
-        matches = re.findall(pattern, markdown)
-
-        for title, url in matches:
-            # Normalise trailing slash
+        seen = set()
+        # Hyper-robust pattern: **Title**](URL)
+        pattern = r'\*\*([^*]+)\*\*\]\((https?://[^ )\s\"]+)'
+        
+        for name, url in re.findall(pattern, markdown, re.IGNORECASE):
             url = url.rstrip('/') + '/'
-            if url in seen_urls:
-                continue
-            if any(skip in url for skip in SKIP_URL_PARTS):
-                continue
-
-            seen_urls.add(url)
-            content_type = self._classify_url(url)
-            clean_title = self._clean_title(title)
-
-            results.append({
-                'name': clean_title,
-                'url': url,
-                'type': content_type,
-                'source': 'egydead'
-            })
-
+            if url not in seen and '/wp-content/' not in url:
+                seen.add(url)
+                # Determine type from URL
+                ctype = 'movie'
+                if '/series/' in url:    ctype = 'series'
+                elif '/season/' in url:  ctype = 'season'
+                elif '/episode/' in url: ctype = 'episode'
+                
+                results.append({
+                    'name': name.strip(),
+                    'url': url,
+                    'type': ctype,
+                    'source': 'egydead'
+                })
         return results
 
     # ------------------------------------------------------------------ #
@@ -75,19 +70,45 @@ class EgyDeadAPI:
     def get_episodes(self, season_url: str) -> list:
         """Return episodes for a season page (oldest first)."""
         result = self.client.scrape(season_url, formats=['markdown'])
-        episodes = self._parse_links_by_type(result.markdown or '', '/episode/')
-        return episodes[::-1]   # reverse so ep 1 is first
+        md = result.markdown or ''
+        
+        # Check if we were redirected to the homepage (common EgyDead bot protection)
+        title = result.metadata.title or ''
+        is_homepage = "ايجي ديد" in title and "مشاهدة" not in title and "نتائج البحث" not in title
+        
+        if is_homepage:
+             # Extract slug from URL to use as search query
+             # e.g. /season/batman-caped-crusader-season-1/ -> batman caped crusader
+             slug = season_url.rstrip('/').split('/')[-1]
+             query = slug.replace('-', ' ')
+             # Broaden query by removing 'season' or 'episode' suffixes
+             if 'season' in query: query = query.split('season')[0].strip()
+             if 'episode' in query: query = query.split('episode')[0].strip()
+             
+             print(f"Redirect (homepage) detected. Falling back to search for: {query}")
+             search_results = self.search(query)
+             # Map search results that are episodes
+             episodes = [r for r in search_results if '/episode/' in r['url']]
+             if episodes:
+                 return episodes[::-1]
+             else:
+                 print(f"Fallback search for {query} returned no episodes.")
 
-    def _parse_links_by_type(self, markdown: str, url_filter: str) -> list:
+        episodes = self._parse_links_by_type(md, '/episode/')
+        return episodes[::-1]
+
+    def _parse_links_by_type(self, markdown: str, type_filter: str) -> list:
+        """Extract links from markdown that match a specific URL path (e.g. /episode/)."""
         items = []
-        seen: set = set()
-        pattern = r'\*\*([^*\n]+)\*\*[^\]]*\]\((https?://[^)\s"]+)'
-        for title, url in re.findall(pattern, markdown):
-            url = url.rstrip('/') + '/'
-            if url in seen or url_filter not in url:
-                continue
-            seen.add(url)
-            items.append({'name': title.strip(), 'url': url})
+        seen = set()
+        # Hyper-robust pattern: **Title**](URL)
+        pattern = r'\*\*([^*]+)\*\*\]\((https?://[^ )\s\"]+)'
+        
+        for title, link in re.findall(pattern, markdown):
+            link = link.rstrip('/') + '/'
+            if link not in seen and type_filter in link:
+                seen.add(link)
+                items.append({'name': title.strip(), 'url': link})
         return items
 
     # ------------------------------------------------------------------ #
