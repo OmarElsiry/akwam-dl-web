@@ -2,3 +2,4 @@ fastapi
 requests
 pydantic
 uvicorn
+firecrawl-py

@@ -50,8 +50,24 @@
 
         <main>
             <section class="search-card">
+                <!-- Provider Switch -->
+                <div class="provider-row">
+                    <span class="provider-label">Source</span>
+                    <div class="provider-switch" id="providerSwitch">
+                        <button type="button" class="provider-opt active" data-value="akwam" id="providerAkwam">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15V6m-14 5l7-7 7 7M3 21h18"/></svg>
+                            Akwam
+                        </button>
+                        <button type="button" class="provider-opt" data-value="egydead" id="providerEgydead">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            EgyDead
+                        </button>
+                    </div>
+                </div>
+
                 <div class="input-group">
-                    <div class="select-wrapper">
+                    <!-- Type switch (Akwam only) -->
+                    <div class="select-wrapper" id="typeWrapper">
                         <div class="search-type-container">
                             <div class="search-switch" id="searchTypeSwitch">
                                 <button type="button" class="switch-opt active" data-value="movie">Movies</button>
@@ -72,9 +88,9 @@
         </main>
     </div>
 
-    <!-- Modal System -->
+    <!-- Main Modal -->
     <div id="overlay" class="overlay">
-        <div class="modal">
+        <div class="modal" id="mainModal">
             <div class="modal-header">
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
                     <button id="modalBackBtn" class="btn-icon" style="display: none; padding: 0.25rem;" title="Go Back">

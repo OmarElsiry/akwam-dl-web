@@ -651,3 +651,159 @@ button.btn-primary:hover {
     padding: 0.5rem 1rem;
     font-size: 0.75rem;
 }
+
+/* ============================================================
+   Provider Switch
+   ============================================================ */
+.provider-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.provider-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+}
+
+.provider-switch {
+    display: flex;
+    background: var(--bg-main);
+    padding: 0.2rem;
+    border-radius: calc(var(--radius) - 2px);
+    border: 1px solid var(--border);
+    gap: 0.15rem;
+}
+
+.provider-opt {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 1rem;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: calc(var(--radius) - 4px);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.provider-opt.active {
+    background: var(--accent);
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+}
+
+.provider-opt:not(.active):hover {
+    background: rgba(0,0,0,0.04);
+    color: var(--text-primary);
+}
+
+/* ============================================================
+   Source Badges on Result Cards
+   ============================================================ */
+.source-badge {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.6rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.source-akwam {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+}
+
+.source-egydead {
+    background: #fdf4ff;
+    color: #7e22ce;
+    border: 1px solid #e9d5ff;
+}
+
+.badge-egydead {
+    background: #fdf4ff;
+    color: #7e22ce;
+    border-color: #e9d5ff;
+}
+
+/* ============================================================
+   Wide Modal for Video Embeds
+   ============================================================ */
+.modal-wide {
+    max-width: min(900px, 96vw) !important;
+}
+
+/* ============================================================
+   EgyDead Watch / Embed Container
+   ============================================================ */
+.watch-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.server-row {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.server-btn {
+    padding: 0.4rem 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-main);
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.server-btn.active,
+.server-btn:hover {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+.embed-frame-wrap {
+    position: relative;
+    width: 100%;
+    padding-top: 56.25%; /* 16:9 */
+    background: #000;
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.embed-frame-wrap iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+.btn-open-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    text-decoration: none;
+    text-align: center;
+    padding: 0.6rem 1rem;
+    font-size: 0.8125rem;
+}
