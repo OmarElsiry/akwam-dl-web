@@ -37,8 +37,8 @@ class EgyDeadAPI:
         """Parse search result links from markdown."""
         results = []
         seen = set()
-        # Hyper-robust pattern: **Title**](URL)
-        pattern = r'\*\*([^*]+)\*\*\]\((https?://[^ )\s\"]+)'
+        # Flexible pattern to match [**Title**](URL) or [Title](URL)
+        pattern = r'(?:\[\*\*|\*\*?\[?|\[)([^\]*]+)(?:\*\*?\]?|\]\*\*?)\((https?://[^ )\s\"]+)'
         
         for name, url in re.findall(pattern, markdown, re.IGNORECASE):
             url = url.rstrip('/') + '/'
@@ -87,12 +87,19 @@ class EgyDeadAPI:
              
              print(f"Redirect (homepage) detected. Falling back to search for: {query}")
              search_results = self.search(query)
+             print(f"Fallback search found {len(search_results)} total items.")
+             
              # Map search results that are episodes
-             episodes = [r for r in search_results if '/episode/' in r['url']]
+             episodes = [r for r in search_results if r['type'] == 'episode']
+             if not episodes:
+                 # If no episodes, fallback to any link containing /episode/
+                 episodes = [{'name': r['name'], 'url': r['url']} for r in search_results if '/episode/' in r['url']]
+             
              if episodes:
+                 # Sort by episode number if possible, or leave as found
                  return episodes[::-1]
              else:
-                 print(f"Fallback search for {query} returned no episodes.")
+                 print(f"Fallback search for {query} returned no episode-type results.")
 
         episodes = self._parse_links_by_type(md, '/episode/')
         return episodes[::-1]
@@ -101,8 +108,8 @@ class EgyDeadAPI:
         """Extract links from markdown that match a specific URL path (e.g. /episode/)."""
         items = []
         seen = set()
-        # Hyper-robust pattern: **Title**](URL)
-        pattern = r'\*\*([^*]+)\*\*\]\((https?://[^ )\s\"]+)'
+        # Flexible pattern to match [**Title**](URL) or [Title](URL)
+        pattern = r'(?:\[\*\*|\*\*?\[?|\[)([^\]*]+)(?:\*\*?\]?|\]\*\*?)\((https?://[^ )\s\"]+)'
         
         for title, link in re.findall(pattern, markdown):
             link = link.rstrip('/') + '/'
