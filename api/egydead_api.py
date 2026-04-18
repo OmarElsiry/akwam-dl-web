@@ -37,12 +37,24 @@ class EgyDeadAPI:
         """Parse search result links from markdown."""
         results = []
         seen = set()
-        # Flexible pattern to match [**Title**](URL) or [Title](URL)
-        pattern = r'(?:\[\*\*|\*\*?\[?|\[)([^\]*]+)(?:\*\*?\]?|\]\*\*?)\((https?://[^ )\s\"]+)'
+        # Flexible pattern to extract all link elements: [raw_content](URL)
+        pattern = r'\[(.*?)\]\((https?://[^ )\s\"]+)\)'
         
-        for name, url in re.findall(pattern, markdown, re.IGNORECASE):
+        for raw_name, url in re.findall(pattern, markdown):
             url = url.rstrip('/') + '/'
-            if url not in seen and '/wp-content/' not in url:
+            
+            # Clean up the raw link text (remove images, bolding, italics)
+            name = re.sub(r'!\[.*?\]\(.*?\)', '', raw_name)
+            name = re.sub(r'[*_]', '', name)
+            name = name.strip()
+            
+            skip = False
+            for part in SKIP_URL_PARTS:
+                if part in url:
+                    skip = True
+                    break
+            
+            if name and url not in seen and not skip:
                 seen.add(url)
                 # Determine type from URL
                 ctype = 'movie'
@@ -108,14 +120,20 @@ class EgyDeadAPI:
         """Extract links from markdown that match a specific URL path (e.g. /episode/)."""
         items = []
         seen = set()
-        # Flexible pattern to match [**Title**](URL) or [Title](URL)
-        pattern = r'(?:\[\*\*|\*\*?\[?|\[)([^\]*]+)(?:\*\*?\]?|\]\*\*?)\((https?://[^ )\s\"]+)'
+        # Flexible pattern to extract all link elements: [raw_content](URL)
+        pattern = r'\[(.*?)\]\((https?://[^ )\s\"]+)\)'
         
-        for title, link in re.findall(pattern, markdown):
+        for raw_name, link in re.findall(pattern, markdown):
             link = link.rstrip('/') + '/'
-            if link not in seen and type_filter in link:
+            
+            # Clean up the raw link text
+            name = re.sub(r'!\[.*?\]\(.*?\)', '', raw_name)
+            name = re.sub(r'[*_]', '', name)
+            name = name.strip()
+            
+            if name and link not in seen and type_filter in link:
                 seen.add(link)
-                items.append({'name': title.strip(), 'url': link})
+                items.append({'name': name, 'url': link})
         return items
 
     # ------------------------------------------------------------------ #
