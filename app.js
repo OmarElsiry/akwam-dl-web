@@ -546,8 +546,7 @@ function egyDeadRenderWatch(data, item) {
                 ${serverBtns ? `<div class="server-row">${serverBtns}</div>` : ''}
                 <div class="embed-frame-wrap">
                     <iframe id="egyDeadFrame" src="${servers[0].url}"
-                        frameborder="0" allowfullscreen allow="autoplay; fullscreen"
-                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups">
+                        frameborder="0" allowfullscreen allow="autoplay; fullscreen">
                     </iframe>
                 </div>
                 <a href="${item.url}" target="_blank" class="btn-secondary btn-open-page">
