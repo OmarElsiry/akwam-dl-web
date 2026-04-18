@@ -37,16 +37,19 @@ class EgyDeadAPI:
         """Parse search result links from markdown."""
         results = []
         seen = set()
-        # Flexible pattern to extract all link elements: [raw_content](URL)
-        pattern = r'\[(.*?)\]\((https?://[^ )\s\"]+)\)'
+        # Find ALL links in the format ](URL "Hover text")
+        pattern = r'\]\((https?://[^\s)]+)(?:\s+"([^"]+)")?\)'
         
-        for raw_name, url in re.findall(pattern, markdown):
+        from urllib.parse import unquote
+        for url, hover_title in re.findall(pattern, markdown):
             url = url.rstrip('/') + '/'
             
-            # Clean up the raw link text (remove images, bolding, italics)
-            name = re.sub(r'!\[.*?\]\(.*?\)', '', raw_name)
-            name = re.sub(r'[*_]', '', name)
-            name = name.strip()
+            # Use hover title if available, else deduce from URL slug
+            if hover_title:
+                name = hover_title.strip()
+            else:
+                slug = url.rstrip('/').split('/')[-1]
+                name = unquote(slug).replace('-', ' ').strip()
             
             skip = False
             for part in SKIP_URL_PARTS:
@@ -120,16 +123,19 @@ class EgyDeadAPI:
         """Extract links from markdown that match a specific URL path (e.g. /episode/)."""
         items = []
         seen = set()
-        # Flexible pattern to extract all link elements: [raw_content](URL)
-        pattern = r'\[(.*?)\]\((https?://[^ )\s\"]+)\)'
+        # Find ALL links in the format ](URL "Hover text")
+        pattern = r'\]\((https?://[^\s)]+)(?:\s+"([^"]+)")?\)'
         
-        for raw_name, link in re.findall(pattern, markdown):
+        from urllib.parse import unquote
+        for link, hover_title in re.findall(pattern, markdown):
             link = link.rstrip('/') + '/'
             
-            # Clean up the raw link text
-            name = re.sub(r'!\[.*?\]\(.*?\)', '', raw_name)
-            name = re.sub(r'[*_]', '', name)
-            name = name.strip()
+            # Use hover title if available, else deduce from URL slug
+            if hover_title:
+                name = hover_title.strip()
+            else:
+                slug = link.rstrip('/').split('/')[-1]
+                name = unquote(slug).replace('-', ' ').strip()
             
             if name and link not in seen and type_filter in link:
                 seen.add(link)

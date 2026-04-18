@@ -4,11 +4,19 @@ sys.stdout.reconfigure(encoding='utf-8')
 with open('debug_search_batman.md', 'r', encoding='utf-8') as f:
     text = f.read()
 
-pattern = r'\[(.*?)\]\((https?://[^ )\s\"]+)\)'
-for raw_name, url in re.findall(pattern, text):
-    # Clean up raw_name
-    name = re.sub(r'!\[.*?\]\(.*?\)', '', raw_name) # remove images
-    name = re.sub(r'[*_]', '', name) # remove bold/italic
+pattern = r'\*\*([^*]+)\*\*[^\]]*\]\((https?://[^)\s]+)\)'
+for name, url in re.findall(pattern, text, re.DOTALL):
     name = name.strip()
-    if name:
-        print(f'{name} -> {url}')
+    url = url.rstrip('/') + '/'
+    print(f'{name} -> {url}')
+    
+    skip = False
+    for part in SKIP_URL_PARTS:
+        if part in url:
+            skip = True
+            break
+            
+    if name and url not in seen and not skip:
+        seen.add(url)
+        print(f'KEPT: {name} -> {url}')
+
