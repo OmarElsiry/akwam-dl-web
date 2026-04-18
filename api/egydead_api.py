@@ -10,7 +10,9 @@ VIDEO_HOSTS = [
     'mixdrop', 'filemoon', 'ok.ru', 'dailymotion', 'vk.com', 'player',
     'embed', 'video', 'stream', 'watch', 'play', 'vid', 'media',
     'streamhub', 'vidlox', 'vidhide', 'openvid', 'sendvid', 'sbplay',
-    'sbembed', 'cloudemb', 'streamlare', 'supervideo'
+    'sbembed', 'cloudemb', 'streamlare', 'supervideo',
+    'hgcloud', 'vibuxer', 'minochinos', 'playmogo', 'forafile',
+    'earnvids', 'dsvplay', 'doodstream'
 ]
 
 SKIP_URL_PARTS = ['/type/', '?s=', '/page/', '/dmca', '#', '/wp-', '/feed']
@@ -170,38 +172,86 @@ class EgyDeadAPI:
     # ------------------------------------------------------------------ #
 
     def get_watch_url(self, content_url: str) -> dict:
-        """Scrape a movie/episode page and return embed or direct video URLs."""
+        """Scrape a movie/episode page and return embed or direct video URLs.
+        
+        Strategy:
+        1. First try raw HTML scrape (no click) — many pages have servers
+           rendered directly in the initial HTML.
+        2. If no servers found, retry with click action on .watchNow button.
+        """
         cache_key = f"watch:{content_url}"
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        # Use actions to click the watch/download button to expose the servers
-        result = self.client.scrape(content_url, formats=['html'], actions=[
-            {"type": "click", "selector": ".watchNow button"},
-            {"type": "wait", "milliseconds": 500},
-        ])
-        
-        # Handle dictionary return if SDK version is old/different
-        html = result.get('html', '') if isinstance(result, dict) else getattr(result, 'html', '')
-        html = html or ''
+        # ── Attempt 1: Raw HTML (no actions) ──────────────────────────
+        print(f"[EgyDead] Attempt 1: Raw HTML scrape for {content_url}")
+        try:
+            result = self.client.scrape(content_url, formats=['html'])
+            html = result.get('html', '') if isinstance(result, dict) else getattr(result, 'html', '')
+            html = html or ''
+        except Exception as e:
+            print(f"[EgyDead] Raw scrape failed: {e}")
+            html = ''
 
-        # 1. Parse Servers from the "serversList" injected by the button click
+        servers, downloads, direct_urls = self._extract_from_html(html)
+
+        # ── Attempt 2: Click action (if attempt 1 found nothing) ──────
+        if not servers and not direct_urls:
+            print(f"[EgyDead] Attempt 2: Click .watchNow for {content_url}")
+            try:
+                result = self.client.scrape(content_url, formats=['html'], actions=[
+                    {"type": "click", "selector": ".watchNow button"},
+                    {"type": "wait", "milliseconds": 500},
+                ])
+                html2 = result.get('html', '') if isinstance(result, dict) else getattr(result, 'html', '')
+                html2 = html2 or ''
+                if html2:
+                    servers, downloads, direct_urls = self._extract_from_html(html2)
+            except Exception as e:
+                print(f"[EgyDead] Click scrape failed: {e}")
+
+        ret = {
+            'servers': servers,
+            'downloads': downloads,
+            'direct_urls': direct_urls[:3],
+            'page_url': content_url
+        }
+        self._cache[cache_key] = ret
+        return ret
+
+    def _extract_from_html(self, html: str):
+        """Extract servers, downloads, and direct URLs from HTML content."""
         servers = []
-        # Pattern looks for <li data-link="URL">...<p>ServerName</p>...</li>
+        downloads = []
+        direct_urls = []
+
+        if not html:
+            return servers, downloads, direct_urls
+
+        # 1. Parse Servers from "serversList"
+        #    Pattern: <li data-link="URL" ...><span><p>ServerName</p></span></li>
         pattern = r'<li[^>]*data-link=["\']([^"\']+)["\'][^>]*>.*?<p>([^<]+)</p>'
         for match in re.finditer(pattern, html, re.DOTALL | re.IGNORECASE):
             url, name = match.groups()
             servers.append({'name': name.strip(), 'url': url.strip()})
 
-        # 2. Extract Downloads from the "donwload-servers-list"
-        downloads = []
-        dl_block_match = re.search(r'<ul[^>]*class=["\'][^"\']*donwload-servers-list[^"\']*["\'][^>]*>(.*?)</ul>', html, re.DOTALL | re.IGNORECASE)
+        # 2. Extract Downloads from "donwload-servers-list"
+        dl_block_match = re.search(
+            r'<ul[^>]*class=["\'][^"\']*donwload-servers-list[^"\']*["\'][^>]*>(.*?)</ul>',
+            html, re.DOTALL | re.IGNORECASE
+        )
         if dl_block_match:
             for li_html in re.split(r'</li>', dl_block_match.group(1), flags=re.IGNORECASE):
-                # We skip empty tail fragments
-                if not li_html.strip(): continue
-                name_m = re.search(r'<span[^>]*class=["\'][^"\']*ser-name[^"\']*["\'][^>]*>(.*?)</span>', li_html, re.IGNORECASE | re.DOTALL)
-                qual_m = re.search(r'<div[^>]*class=["\'][^"\']*server-info[^"\']*["\'][^>]*>.*?<em[^>]*>(.*?)</em>', li_html, re.IGNORECASE | re.DOTALL)
+                if not li_html.strip():
+                    continue
+                name_m = re.search(
+                    r'<span[^>]*class=["\'][^"\']*ser-name[^"\']*["\'][^>]*>(.*?)</span>',
+                    li_html, re.IGNORECASE | re.DOTALL
+                )
+                qual_m = re.search(
+                    r'<div[^>]*class=["\'][^"\']*server-info[^"\']*["\'][^>]*>.*?<em[^>]*>(.*?)</em>',
+                    li_html, re.IGNORECASE | re.DOTALL
+                )
                 url_m = re.search(r'<a[^>]*href=["\']([^"\']+)["\']', li_html, re.IGNORECASE)
                 
                 if qual_m and url_m:
@@ -212,7 +262,7 @@ class EgyDeadAPI:
                         'url': url_m.group(1).strip()
                     })
 
-        # Deduplicate by URL (page HTML sometimes has the list twice — live + commented copy)
+        # Deduplicate downloads by URL (page HTML sometimes has the list twice)
         seen_urls = set()
         unique_downloads = []
         for d in downloads:
@@ -221,7 +271,7 @@ class EgyDeadAPI:
                 unique_downloads.append(d)
         downloads = unique_downloads
 
-        # 3. Fallback: Parse iframes (most common – external player)
+        # 3. Fallback: Parse iframes (standard <iframe> tags)
         if not servers:
             all_iframes = re.findall(
                 r'<iframe[^>]+src=["\']([^"\']+)["\']',
@@ -236,27 +286,41 @@ class EgyDeadAPI:
             for i, url in enumerate(embed_urls[:5]):
                 servers.append({'name': f'Server {i+1}', 'url': url})
 
-        # 4. Direct video files (.mp4 / .m3u8) (fallback for direct play)
+        # 4. Handle Firecrawl's iframe sanitization: <div src="..." data-original-tag="iframe">
+        if not servers:
+            sanitized = re.findall(
+                r'<div[^>]+src=["\']([^"\']+)["\'][^>]+data-original-tag=["\']iframe["\']',
+                html, re.IGNORECASE
+            )
+            if not sanitized:
+                # Also try reversed attr order
+                sanitized = re.findall(
+                    r'<div[^>]+data-original-tag=["\']iframe["\'][^>]+src=["\']([^"\']+)["\']',
+                    html, re.IGNORECASE
+                )
+            embed_urls = [
+                src for src in sanitized
+                if any(h in src.lower() for h in VIDEO_HOSTS)
+                and 'recaptcha' not in src
+            ]
+            for i, url in enumerate(embed_urls[:5]):
+                servers.append({'name': f'Server {i+1}', 'url': url})
+
+        # 5. Direct video files (.mp4 / .m3u8) (fallback for direct play)
         direct_urls = list(dict.fromkeys(re.findall(
             r'(https?://[^\s"\'<>]+\.(?:mp4|m3u8|mkv)[^\s"\'<>]*)',
             html
         )))
 
-        # 5. Fallback – try data-src attributes
+        # 6. Fallback – try data-src attributes
         if not servers and not direct_urls:
             ds = re.findall(r'data-src=["\']([^"\']+)["\']', html, re.IGNORECASE)
             embed_urls = [u for u in ds if any(h in u.lower() for h in VIDEO_HOSTS)]
             for i, url in enumerate(embed_urls[:5]):
                 servers.append({'name': f'Server {i+1}', 'url': url})
 
-        ret = {
-            'servers': servers,
-            'downloads': downloads,
-            'direct_urls': direct_urls[:3],
-            'page_url': content_url
-        }
-        self._cache[cache_key] = ret
-        return ret
+        return servers, downloads, direct_urls
+
     # ------------------------------------------------------------------ #
     #  Utilities
     # ------------------------------------------------------------------ #

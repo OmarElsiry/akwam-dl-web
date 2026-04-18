@@ -18,7 +18,7 @@ html = result.html or ''
 
 # 1. Check for episode links in markdown
 pattern = r'\*\*([^*\n]+)\*\*[^\]]*\]\((https?://[^)\s"]+)'
-matches = re.findall(pattern, markdown)
+matches = re.findalpushl(pattern, markdown)
 print(f"Matches found in markdown (Pattern 1): {len(matches)}")
 for title, link in matches[:10]:
     if '/episode/' in link:
