@@ -22,6 +22,7 @@ class EgyDeadAPI:
     def __init__(self):
         self.client = Firecrawl(api_key=FIRECRAWL_API_KEY)
         self.search_base = "https://egydead.live"
+        self._cache = {}
 
     # ------------------------------------------------------------------ #
     #  Search
@@ -30,8 +31,12 @@ class EgyDeadAPI:
     def search(self, query: str) -> list:
         """Search EgyDead for any content type."""
         search_url = f"{self.search_base}/?s={query.replace(' ', '+')}"
+        if search_url in self._cache:
+            return self._cache[search_url]
         result = self.client.scrape(search_url, formats=['markdown'])
-        return self._parse_search_results(result.markdown or '')
+        res = self._parse_search_results(getattr(result, 'markdown', '') or '')
+        self._cache[search_url] = res
+        return res
 
     def _parse_search_results(self, markdown: str) -> list:
         """Parse search result links from markdown."""
@@ -85,16 +90,24 @@ class EgyDeadAPI:
 
     def get_seasons(self, series_url: str) -> list:
         """Return seasons for a series page."""
+        cache_key = f"seasons:{series_url}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
         result = self.client.scrape(series_url, formats=['markdown'])
-        return self._parse_links_by_type(result.markdown or '', '/season/')
+        res = self._parse_links_by_type(getattr(result, 'markdown', '') or '', '/season/')
+        self._cache[cache_key] = res
+        return res
 
     def get_episodes(self, season_url: str) -> list:
         """Return episodes for a season page (oldest first)."""
+        cache_key = f"episodes:{season_url}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
         result = self.client.scrape(season_url, formats=['markdown'])
-        md = result.markdown or ''
+        md = getattr(result, 'markdown', '') or ''
         
         # Check if we were redirected to the homepage (common EgyDead bot protection)
-        title = result.metadata.title or ''
+        title = getattr(result.metadata, 'title', '') if hasattr(result, 'metadata') else ''
         is_homepage = "ايجي ديد" in title and "مشاهدة" not in title and "نتائج البحث" not in title
         
         if is_homepage:
@@ -118,12 +131,16 @@ class EgyDeadAPI:
              
              if episodes:
                  # Sort by episode number if possible, or leave as found
-                 return episodes[::-1]
+                 res = episodes[::-1]
+                 self._cache[cache_key] = res
+                 return res
              else:
                  print(f"Fallback search for {query} returned no episode-type results.")
 
         episodes = self._parse_links_by_type(md, '/episode/')
-        return episodes[::-1]
+        res = episodes[::-1]
+        self._cache[cache_key] = res
+        return res
 
     def _parse_links_by_type(self, markdown: str, type_filter: str) -> list:
         """Extract links from markdown that match a specific URL path (e.g. /episode/)."""
@@ -154,13 +171,19 @@ class EgyDeadAPI:
 
     def get_watch_url(self, content_url: str) -> dict:
         """Scrape a movie/episode page and return embed or direct video URLs."""
+        cache_key = f"watch:{content_url}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         # Use actions to click the watch/download button to expose the servers
-        result = self.client.scrape(content_url, formats=['html', 'markdown'], actions=[
-            {"type": "wait", "milliseconds": 2000},
+        result = self.client.scrape(content_url, formats=['html'], actions=[
             {"type": "click", "selector": ".watchNow button"},
-            {"type": "wait", "milliseconds": 3000},
+            {"type": "wait", "milliseconds": 500},
         ])
-        html = result.html or ''
+        
+        # Handle dictionary return if SDK version is old/different
+        html = result.get('html', '') if isinstance(result, dict) else getattr(result, 'html', '')
+        html = html or ''
 
         # 1. Parse Servers from the "serversList" injected by the button click
         servers = []
@@ -170,7 +193,35 @@ class EgyDeadAPI:
             url, name = match.groups()
             servers.append({'name': name.strip(), 'url': url.strip()})
 
-        # 2. Fallback: Parse iframes (most common – external player)
+        # 2. Extract Downloads from the "donwload-servers-list"
+        downloads = []
+        dl_block_match = re.search(r'<ul[^>]*class=["\'][^"\']*donwload-servers-list[^"\']*["\'][^>]*>(.*?)</ul>', html, re.DOTALL | re.IGNORECASE)
+        if dl_block_match:
+            for li_html in re.split(r'</li>', dl_block_match.group(1), flags=re.IGNORECASE):
+                # We skip empty tail fragments
+                if not li_html.strip(): continue
+                name_m = re.search(r'<span[^>]*class=["\'][^"\']*ser-name[^"\']*["\'][^>]*>(.*?)</span>', li_html, re.IGNORECASE | re.DOTALL)
+                qual_m = re.search(r'<div[^>]*class=["\'][^"\']*server-info[^"\']*["\'][^>]*>.*?<em[^>]*>(.*?)</em>', li_html, re.IGNORECASE | re.DOTALL)
+                url_m = re.search(r'<a[^>]*href=["\']([^"\']+)["\']', li_html, re.IGNORECASE)
+                
+                if qual_m and url_m:
+                    name = name_m.group(1).strip() if name_m and name_m.group(1).strip() else "Direct Download"
+                    downloads.append({
+                        'name': name,
+                        'quality': qual_m.group(1).strip(),
+                        'url': url_m.group(1).strip()
+                    })
+
+        # Deduplicate by URL (page HTML sometimes has the list twice — live + commented copy)
+        seen_urls = set()
+        unique_downloads = []
+        for d in downloads:
+            if d['url'] not in seen_urls:
+                seen_urls.add(d['url'])
+                unique_downloads.append(d)
+        downloads = unique_downloads
+
+        # 3. Fallback: Parse iframes (most common – external player)
         if not servers:
             all_iframes = re.findall(
                 r'<iframe[^>]+src=["\']([^"\']+)["\']',
@@ -185,24 +236,27 @@ class EgyDeadAPI:
             for i, url in enumerate(embed_urls[:5]):
                 servers.append({'name': f'Server {i+1}', 'url': url})
 
-        # 3. Direct video files (.mp4 / .m3u8) (fallback for direct play)
+        # 4. Direct video files (.mp4 / .m3u8) (fallback for direct play)
         direct_urls = list(dict.fromkeys(re.findall(
             r'(https?://[^\s"\'<>]+\.(?:mp4|m3u8|mkv)[^\s"\'<>]*)',
             html
         )))
 
-        # 4. Fallback – try data-src attributes
+        # 5. Fallback – try data-src attributes
         if not servers and not direct_urls:
             ds = re.findall(r'data-src=["\']([^"\']+)["\']', html, re.IGNORECASE)
             embed_urls = [u for u in ds if any(h in u.lower() for h in VIDEO_HOSTS)]
             for i, url in enumerate(embed_urls[:5]):
                 servers.append({'name': f'Server {i+1}', 'url': url})
 
-        return {
+        ret = {
             'servers': servers,
+            'downloads': downloads,
             'direct_urls': direct_urls[:3],
             'page_url': content_url
         }
+        self._cache[cache_key] = ret
+        return ret
     # ------------------------------------------------------------------ #
     #  Utilities
     # ------------------------------------------------------------------ #

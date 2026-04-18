@@ -526,8 +526,9 @@ async function egyDeadShowWatch(item) {
 }
 
 function egyDeadRenderWatch(data, item) {
-    const servers  = data.servers  || [];
+    const servers    = data.servers    || [];
     const directUrls = data.direct_urls || [];
+    const downloads  = data.downloads  || [];
 
     // ── Case 1: we have servers ──────────────────────
     if (servers.length > 0) {
@@ -541,6 +542,45 @@ function egyDeadRenderWatch(data, item) {
             ).join('');
         }
 
+        // Build download buttons HTML — grouped by QUALITY, not by server
+        const downloadIcon = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+        let downloadsHtml = '';
+        if (downloads.length > 0) {
+            // 1. Group by quality
+            const qualityMap = {};
+            for (const d of downloads) {
+                if (!qualityMap[d.quality]) qualityMap[d.quality] = [];
+                qualityMap[d.quality].push(d);
+            }
+
+            // 2. Sort qualities: 4K → 2160p → 1080p → 720p → 480p → rest
+            const qualityOrder = ['4K', '2160p', '1080p', '720p', '480p', '360p', '240p'];
+            const sortedQualities = Object.keys(qualityMap).sort((a, b) => {
+                const ai = qualityOrder.indexOf(a);
+                const bi = qualityOrder.indexOf(b);
+                return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+            });
+
+            // 3. One card per quality — servers for that quality listed as chips inside
+            const qualityCards = sortedQualities.map(q => {
+                const serversForQuality = qualityMap[q];
+                const serverChips = serversForQuality.map(d => {
+                    const label = d.name && d.name !== 'Direct Download' ? d.name : 'Mirror';
+                    return `<a class="dl-server-chip" href="${d.url}" target="_blank" rel="noopener noreferrer">${downloadIcon} ${label}</a>`;
+                }).join('');
+                return `<div class="dl-quality-card">
+                    <span class="dl-quality-label">${q}</span>
+                    <div class="dl-server-chips">${serverChips}</div>
+                </div>`;
+            }).join('');
+
+            downloadsHtml = `
+                <div class="downloads-section">
+                    <div class="downloads-label">Downloads</div>
+                    <div class="dl-quality-list">${qualityCards}</div>
+                </div>`;
+        }
+
         dom.modalList.innerHTML = `
             <div class="watch-container">
                 ${serverBtns ? `<div class="server-row">${serverBtns}</div>` : ''}
@@ -549,6 +589,7 @@ function egyDeadRenderWatch(data, item) {
                         frameborder="0" allowfullscreen allow="autoplay; fullscreen">
                     </iframe>
                 </div>
+                ${downloadsHtml}
                 <a href="${item.url}" target="_blank" class="btn-secondary btn-open-page">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                     Open in EgyDead

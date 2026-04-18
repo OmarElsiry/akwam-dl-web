@@ -806,4 +806,101 @@ button.btn-primary:hover {
     text-align: center;
     padding: 0.6rem 1rem;
     font-size: 0.8125rem;
+}
+
+/* ============================================================
+   Download Quality Cards (EgyDead) — quality-first layout
+   ============================================================ */
+.downloads-section {
+    margin-top: 0.25rem;
+    border-top: 1px solid var(--border);
+    padding-top: 0.875rem;
+}
+
+.downloads-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.625rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.downloads-label::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: #10b981;
+    border-radius: 50%;
+}
+
+/* One row per quality tier */
+.dl-quality-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.dl-quality-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.45rem 0.75rem;
+    background: #f8fffe;
+    border: 1px solid #d1fae5;
+    border-radius: var(--radius);
+}
+
+/* Bold quality badge on the left */
+.dl-quality-label {
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: #065f46;
+    min-width: 3.5rem;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+/* Server chips on the right */
+.dl-server-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.dl-server-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.6rem;
+    border: 1px solid #a7f3d0;
+    border-radius: 99px;
+    background: #fff;
+    color: #047857;
+    font-size: 0.74rem;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: all 0.14s;
+}
+
+.dl-server-chip svg {
+    flex-shrink: 0;
+    opacity: 0.6;
+}
+
+.dl-server-chip:hover {
+    background: #10b981;
+    color: #fff;
+    border-color: #10b981;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(16, 185, 129, 0.3);
+}
+
+.dl-server-chip:hover svg {
+    opacity: 1;
 }
