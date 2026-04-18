@@ -44,15 +44,17 @@ class EgyDeadAPI:
         for url, hover_title in re.findall(pattern, markdown):
             url = url.rstrip('/') + '/'
             
+            slug = url.rstrip('/').split('/')[-1]
             # Use hover title if available, else deduce from URL slug
             if hover_title:
                 name = hover_title.strip()
             else:
-                slug = url.rstrip('/').split('/')[-1]
                 name = unquote(slug).replace('-', ' ').strip()
             
             # Skip root domain
-            if 'egydead' in slug and '.' in slug:
+            if 'egydead' in slug.lower() and '.' in slug:
+                continue
+            if 'egydead' in name.lower() and '.' in name:
                 continue
             
             skip = False
