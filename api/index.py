@@ -254,6 +254,45 @@ async def proxy_stream(url: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ------------------------------------------------------------------ #
+#  Image Proxy (for CORS-blocked thumbnails)
+# ------------------------------------------------------------------ #
+
+@app.get("/api/proxy-image")
+async def proxy_image(url: str):
+    """Proxy an image through the server to bypass CORS restrictions."""
+    if not url:
+        raise HTTPException(status_code=400, detail="Missing 'url' parameter")
+
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if parsed.scheme not in ('http', 'https'):
+        raise HTTPException(status_code=400, detail="Invalid URL scheme")
+    if not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Invalid URL")
+    hostname = parsed.hostname.lower()
+    blocked = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '169.254']
+    if any(hostname.startswith(b) for b in blocked) or hostname.endswith('.local'):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
+            resp = await client.get(url, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': url,
+            })
+            content_type = resp.headers.get('content-type', 'image/jpeg')
+            return StreamingResponse(
+                iter([resp.content]),
+                media_type=content_type,
+                headers={
+                    'Cache-Control': 'public, max-age=86400',
+                    'Access-Control-Allow-Origin': '*',
+                }
+            )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+# ------------------------------------------------------------------ #
 #  Health
 # ------------------------------------------------------------------ #
 

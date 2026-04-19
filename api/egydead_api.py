@@ -35,15 +35,48 @@ class EgyDeadAPI:
         search_url = f"{self.search_base}/?s={query.replace(' ', '+')}"
         if search_url in self._cache:
             return self._cache[search_url]
-        result = self.client.scrape(search_url, formats=['markdown'])
-        res = self._parse_search_results(getattr(result, 'markdown', '') or '')
+        result = self.client.scrape(search_url, formats=['markdown', 'html'])
+        md = getattr(result, 'markdown', '') or ''
+        html = result.get('html', '') if isinstance(result, dict) else getattr(result, 'html', '')
+        html = html or ''
+        res = self._parse_search_results(md, html)
         self._cache[search_url] = res
         return res
 
-    def _parse_search_results(self, markdown: str) -> list:
-        """Parse search result links from markdown."""
+    def _parse_search_results(self, markdown: str, html: str = '') -> list:
+        """Parse search result links from markdown, enriched with thumbnails from HTML."""
         results = []
         seen = set()
+
+        # ── Extract thumbnail map from HTML ──
+        # EgyDead search cards: <li class="movieItem"><a href="URL"><img src="THUMB">...
+        thumb_map = {}  # url -> thumbnail
+        if html:
+            for m in re.finditer(
+                r'<li[^>]*class=["\'][^"\']*movieItem[^"\']*["\'][^>]*>\s*'
+                r'<a[^>]*href=["\']([^"\']+)["\'][^>]*>\s*'
+                r'<img[^>]*src=["\']([^"\']+)["\']',
+                html, re.DOTALL | re.IGNORECASE
+            ):
+                link_url = m.group(1).rstrip('/') + '/'
+                thumb_url = m.group(2).strip()
+                if thumb_url and not thumb_url.endswith('.svg'):
+                    thumb_map[link_url] = thumb_url
+
+            # Fallback: grab ALL <a><img> pairs inside any list/grid container
+            if not thumb_map:
+                for m in re.finditer(
+                    r'<a[^>]*href=["\']([^"\']+)["\'][^>]*>\s*'
+                    r'(?:<[^>]*>\s*)*'
+                    r'<img[^>]*src=["\']([^"\']+)["\']',
+                    html, re.DOTALL | re.IGNORECASE
+                ):
+                    link_url = m.group(1).rstrip('/') + '/'
+                    thumb_url = m.group(2).strip()
+                    if thumb_url and 'egydead' in link_url and not thumb_url.endswith('.svg'):
+                        thumb_map[link_url] = thumb_url
+
+        # ── Parse links from markdown ──
         # Find ALL links in the format ](URL "Hover text")
         pattern = r'\]\((https?://[^\s)]+)(?:\s+"([^"]+)")?\)'
         
@@ -78,12 +111,16 @@ class EgyDeadAPI:
                 elif '/season/' in url:  ctype = 'season'
                 elif '/episode/' in url: ctype = 'episode'
                 
-                results.append({
+                entry = {
                     'name': name.strip(),
                     'url': url,
                     'type': ctype,
                     'source': 'egydead'
-                })
+                }
+                # Attach thumbnail if found
+                if url in thumb_map:
+                    entry['thumbnail'] = thumb_map[url]
+                results.append(entry)
         return results
 
     # ------------------------------------------------------------------ #
@@ -197,7 +234,7 @@ class EgyDeadAPI:
 
         # ── Attempt 2: Click action (if attempt 1 found nothing) ──────
         if not servers and not direct_urls:
-            print(f"[EgyDead] Attempt 2: Click .watchNow for {content_url}")
+            print(f"[EgyDead] Attempt 2: Click .watchNow button for {content_url}")
             try:
                 result = self.client.scrape(content_url, formats=['html'], actions=[
                     {"type": "click", "selector": ".watchNow button"},
@@ -209,6 +246,21 @@ class EgyDeadAPI:
                     servers, downloads, direct_urls = self._extract_from_html(html2)
             except Exception as e:
                 print(f"[EgyDead] Click scrape failed: {e}")
+
+        # ── Attempt 3: Try clicking the first server tab directly ──────
+        if not servers and not direct_urls:
+            print(f"[EgyDead] Attempt 3: Click .serversList li for {content_url}")
+            try:
+                result = self.client.scrape(content_url, formats=['html'], actions=[
+                    {"type": "click", "selector": "ul.serversList li:first-child"},
+                    {"type": "wait", "milliseconds": 800},
+                ])
+                html3 = result.get('html', '') if isinstance(result, dict) else getattr(result, 'html', '')
+                html3 = html3 or ''
+                if html3:
+                    servers, downloads, direct_urls = self._extract_from_html(html3)
+            except Exception as e:
+                print(f"[EgyDead] Server tab click failed: {e}")
 
         ret = {
             'servers': servers,

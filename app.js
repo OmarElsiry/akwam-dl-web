@@ -159,6 +159,11 @@ function openModal(title, showBack = false, wideVideo = false) {
 
 function closeModal() {
     state.modalHistory = [];
+    // Stop any playing video/iframe before closing
+    const iframe = document.getElementById('egyDeadFrame');
+    if (iframe) iframe.src = 'about:blank';
+    const video = dom.mainModal.querySelector('video');
+    if (video) { video.pause(); video.src = ''; }
     dom.overlay.style.display = 'none';
     dom.mainModal.classList.remove('modal-wide');
 }
@@ -230,19 +235,27 @@ function renderResults(results, type) {
             ? '<span class="source-badge source-egydead">EgyDead</span>'
             : '<span class="source-badge source-akwam">Akwam</span>';
 
+        // Thumbnail for EgyDead results (via wsrv.nl CDN to bypass Cloudflare CORP)
+        const thumbHtml = (isEgyDead && item.thumbnail)
+            ? `<div class="result-thumb"><img src="https://wsrv.nl/?url=${encodeURIComponent(item.thumbnail)}&w=120&h=170&fit=cover&output=webp" alt="" loading="lazy"></div>`
+            : '';
+
         const div = document.createElement('div');
-        div.className = 'result-item';
+        div.className = 'result-item' + (thumbHtml ? ' has-thumb' : '');
         div.innerHTML = `
-            <div class="result-header">
-                <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
-                    ${sourceTag}
-                    <span class="${badgeClass}">${badgeText}</span>
+            ${thumbHtml}
+            <div class="result-info">
+                <div class="result-header">
+                    <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
+                        ${sourceTag}
+                        <span class="${badgeClass}">${badgeText}</span>
+                    </div>
+                    <button class="fav-toggle ${isFav ? 'active' : ''}" title="${isFav ? 'Remove from Favorites' : 'Add to Favorites'}">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="${isFav ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                    </button>
                 </div>
-                <button class="fav-toggle ${isFav ? 'active' : ''}" title="${isFav ? 'Remove from Favorites' : 'Add to Favorites'}">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="${isFav ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-                </button>
+                <h3>${item.name}</h3>
             </div>
-            <h3>${item.name}</h3>
         `;
         div.querySelector('.fav-toggle').onclick = e => { e.stopPropagation(); toggleFavorite(item, badgeText); };
         div.onclick = () => { state.modalHistory = []; handleItemClick(item, badgeText); };
@@ -606,12 +619,47 @@ function egyDeadRenderWatch(data, item) {
 
     // ── Case 3: nothing found, offer link to page ─────────────
     dom.modalTitle.innerText = 'Watch';
+
+    // Even without servers/direct_urls, downloads may have been found
+    let downloadsHtml = '';
+    if (downloads.length > 0) {
+        const downloadIcon = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+        const qualityMap = {};
+        for (const d of downloads) {
+            if (!qualityMap[d.quality]) qualityMap[d.quality] = [];
+            qualityMap[d.quality].push(d);
+        }
+        const qualityOrder = ['4K', '2160p', '1080p', '720p', '480p', '360p', '240p'];
+        const sortedQualities = Object.keys(qualityMap).sort((a, b) => {
+            const ai = qualityOrder.indexOf(a);
+            const bi = qualityOrder.indexOf(b);
+            return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+        });
+        const qualityCards = sortedQualities.map(q => {
+            const serversForQuality = qualityMap[q];
+            const serverChips = serversForQuality.map(d => {
+                const label = d.name && d.name !== 'Direct Download' ? d.name : 'Mirror';
+                return `<a class="dl-server-chip" href="${d.url}" target="_blank" rel="noopener noreferrer">${downloadIcon} ${label}</a>`;
+            }).join('');
+            return `<div class="dl-quality-card">
+                <span class="dl-quality-label">${q}</span>
+                <div class="dl-server-chips">${serverChips}</div>
+            </div>`;
+        }).join('');
+        downloadsHtml = `
+            <div class="downloads-section" style="border-top:none;padding-top:0;">
+                <div class="downloads-label">Downloads Available</div>
+                <div class="dl-quality-list">${qualityCards}</div>
+            </div>`;
+    }
+
     dom.modalList.innerHTML = `
         <div style="text-align:center;padding:2rem;">
             <p style="color:var(--text-secondary);margin-bottom:1.5rem;">
-                Could not extract a direct stream. Open the page in your browser to watch.
+                Could not extract a direct stream.${downloads.length > 0 ? ' But download links are available below.' : ' Open the page in your browser to watch.'}
             </p>
-            <a href="${item.url}" target="_blank" class="btn-primary" style="display:inline-block;text-decoration:none;">
+            ${downloadsHtml}
+            <a href="${item.url}" target="_blank" class="btn-primary" style="display:inline-block;text-decoration:none;margin-top:1rem;">
                 OPEN IN EGYDEAD
             </a>
         </div>`;
