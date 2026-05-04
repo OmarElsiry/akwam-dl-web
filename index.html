@@ -4,10 +4,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Vortex Premium — fast, clean link resolver for Akwam and EgyDead content.">
     <title id="pageTitle">Vortex Premium</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" href="favicon.svg">
@@ -15,39 +16,37 @@
 
 <body>
     <div class="container">
-        <header style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <div style="display: flex; align-items: center; gap: 0.75rem;">
-                    <div id="brandIcon" class="brand-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-                            <path d="M2 17l10 5 10-5"></path>
-                            <path d="M2 12l10 5 10-5"></path>
-                        </svg>
-                    </div>
-                    <h1 id="brandName">Vortex</h1>
+        <header>
+            <div style="display:flex;align-items:center;gap:0.75rem;">
+                <div id="brandIcon" class="brand-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                        <path d="M2 17l10 5 10-5"></path>
+                        <path d="M2 12l10 5 10-5"></path>
+                    </svg>
                 </div>
+                <h1 id="brandName">Vortex</h1>
             </div>
-            <div style="display: flex; gap: 0.5rem; align-items: center;">
-                <button id="donateBtn" class="btn-icon heartbeat" title="Donate" style="color: var(--danger);">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+
+            <div class="header-actions">
+                <button id="donateBtn" class="btn-icon heartbeat" title="Support the project"
+                    style="color: var(--danger);">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
-                        <path
-                            d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z">
-                        </path>
+                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
                     </svg>
                 </button>
                 <a href="https://t.me/PotterParker" target="_blank" class="btn-icon" title="Contact Developer"
                     style="color: #38bdf8;">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 1 1-7.6-11.7 8.38 8.38 0 0 1 3.8.9L21 3z">
-                        </path>
+                        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 1 1-7.6-11.7 8.38 8.38 0 0 1 3.8.9L21 3z"></path>
                     </svg>
                 </a>
-                <button id="favoritesBtn" class="btn-icon" title="View Favorites" style="color: #f39c12;">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                <button id="favoritesBtn" class="btn-icon" title="My Favorites"
+                    style="color: var(--warning);">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
                         <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
                     </svg>
@@ -62,15 +61,13 @@
                     <span class="provider-label">Source</span>
                     <div class="provider-switch" id="providerSwitch">
                         <button type="button" class="provider-opt active" data-value="akwam" id="providerAkwam">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2.5">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <path d="M21 15V6m-14 5l7-7 7 7M3 21h18" />
                             </svg>
                             Akwam
                         </button>
                         <button type="button" class="provider-opt" data-value="egydead" id="providerEgydead">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2.5">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <polygon points="5 3 19 12 5 21 5 3" />
                             </svg>
                             EgyDead
@@ -88,7 +85,7 @@
                             </div>
                         </div>
                     </div>
-                    <input type="text" id="searchInput" placeholder="Enter title to search..." autocomplete="off">
+                    <input type="text" id="searchInput" placeholder="Search for a title…" autocomplete="off">
                     <button id="searchBtn" class="btn-primary">SEARCH</button>
                 </div>
             </section>
@@ -105,10 +102,10 @@
     <div id="overlay" class="overlay">
         <div class="modal" id="mainModal">
             <div class="modal-header">
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <button id="modalBackBtn" class="btn-icon" style="display: none; padding: 0.25rem;" title="Go Back">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <button id="modalBackBtn" class="btn-icon" style="display:none;padding:0.3rem;" title="Go Back">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M19 12H5"></path>
                             <polyline points="12 19 5 12 12 5"></polyline>
                         </svg>
@@ -126,31 +123,26 @@
     </div>
 
     <!-- Donation Modal -->
-    <div id="donationOverlay" class="overlay">
-        <div class="modal">
+    <div id="donationOverlay" class="overlay" style="z-index:2000;">
+        <div class="modal" style="max-width:420px;">
             <div class="modal-header">
                 <h3 class="modal-title">Support Project Vortex</h3>
                 <button id="closeDonation" class="close-modal">&times;</button>
             </div>
-            <div class="modal-body" style="text-align: center;">
-                <p style="margin-bottom: 1.5rem; color: var(--text-secondary);">Your support helps keep the enterprise
-                    link utility running for everyone.</p>
+            <div class="modal-body" style="text-align:center;">
+                <p style="margin-bottom:1.5rem;color:var(--text-secondary);font-size:0.9rem;">Your support keeps this tool free and running for everyone.</p>
 
                 <div class="donation-card">
-                    <div class="donation-type">BINANCE ID: 425075013</div>
-                    <img src="/static/binance id  425075013.jpg" alt="Binance ID QR" class="donation-qr">
+                    <div class="donation-type">Binance ID: 425075013</div>
+                    <img src="/static/binance id  425075013.jpg" alt="Binance QR Code" class="donation-qr">
                     <button class="btn-secondary btn-sm" onclick="copyToClipboard('425075013', this)">COPY ID</button>
                 </div>
 
-                <div class="donation-card" style="margin-top: 2rem;">
+                <div class="donation-card" style="margin-top:1.25rem;">
                     <div class="donation-type">USDT (BNB Chain)</div>
-                    <div
-                        style="font-size: 0.75rem; word-break: break-all; margin-bottom: 0.5rem; font-family: monospace;">
-                        0xe21e3f2149caae5330702ca0e6cf6e66f668433f</div>
-                    <img src="/static/0xe21e3f2149caae5330702ca0e6cf6e66f668433f.jpg" alt="USDT QR" class="donation-qr">
-                    <button class="btn-secondary btn-sm"
-                        onclick="copyToClipboard('0xe21e3f2149caae5330702ca0e6cf6e66f668433f', this)">COPY
-                        ADDRESS</button>
+                    <div style="font-size:0.72rem;word-break:break-all;margin-bottom:0.75rem;font-family:monospace;color:var(--text-secondary);">0xe21e3f2149caae5330702ca0e6cf6e66f668433f</div>
+                    <img src="/static/0xe21e3f2149caae5330702ca0e6cf6e66f668433f.jpg" alt="USDT QR Code" class="donation-qr">
+                    <button class="btn-secondary btn-sm" onclick="copyToClipboard('0xe21e3f2149caae5330702ca0e6cf6e66f668433f', this)">COPY ADDRESS</button>
                 </div>
             </div>
         </div>
@@ -158,15 +150,15 @@
 
     <!-- Favorites Drawer -->
     <div id="drawerOverlay" class="drawer-overlay"></div>
-    <div id="drawer" class="drawer">
+    <aside id="drawer" class="drawer" aria-label="Favorites">
         <div class="drawer-header">
             <h3 id="drawerTitle">My Favorites</h3>
             <button id="closeDrawer" class="close-modal">&times;</button>
         </div>
         <div id="favoritesList" class="drawer-body">
-            <!-- Favorites items will be injected here -->
+            <!-- Injected by JS -->
         </div>
-    </div>
+    </aside>
 
     <script src="app.js"></script>
 </body>
