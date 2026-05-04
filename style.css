@@ -110,10 +110,12 @@ h1 span {
     display: flex;
     gap: 0.75rem;
     align-items: stretch;
+    flex-wrap: wrap;
 }
 
 .select-wrapper {
     min-width: 130px;
+    flex-shrink: 0;
 }
 
 select,
@@ -145,6 +147,7 @@ button.btn-primary {
     border-radius: var(--radius);
     cursor: pointer;
     white-space: nowrap;
+    flex-shrink: 0;
 }
 
 button.btn-primary:hover {
@@ -459,6 +462,7 @@ button.btn-primary:hover {
 
 .input-group input {
     flex: 1;
+    min-width: 0;
     border: none;
     padding: 0.75rem 1rem;
     font-size: 1rem;
@@ -620,14 +624,191 @@ button.btn-primary:hover {
     font-size: 0.875rem;
 }
 
-/* Responsiveness */
-@media (max-width: 640px) {
+/* ============================================================
+   Responsiveness — Mobile-first progressive enhancement
+   ============================================================ */
+
+/* Small phones (≤ 480px) */
+@media (max-width: 480px) {
+    /* Header: tighten and allow wrapping */
+    header {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-bottom: 2rem;
+    }
+
+    h1 {
+        font-size: 1.4rem;
+    }
+
+    /* Search card padding tighter */
+    .search-card {
+        padding: 1.25rem 1rem;
+    }
+
+    /* SOURCE row: wrap onto two lines when labels are wide */
+    .provider-row {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    /* Provider switch: stretch pills to fill width */
+    .provider-switch {
+        flex: 1;
+    }
+
+    .provider-opt {
+        flex: 1;
+        justify-content: center;
+        padding: 0.5rem 0.5rem;
+        font-size: 0.8125rem;
+    }
+
+    /* Input group: full column stack */
+    .input-group {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .select-wrapper {
+        min-width: unset;
+        width: 100%;
+    }
+
+    /* Type switch: stretch to fill container */
+    .search-type-container {
+        width: 100%;
+    }
+
+    .search-switch {
+        width: 100%;
+    }
+
+    .switch-opt {
+        flex: 1;
+        text-align: center;
+    }
+
+    /* Search input: full width with visible border when stacked */
+    .input-group input[type="text"],
+    input[type="text"]#searchInput {
+        width: 100%;
+        min-width: 0;
+        font-size: 0.9375rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg-surface);
+        padding: 0.75rem 1rem;
+    }
+
+    .input-group input[type="text"]:focus,
+    input[type="text"]#searchInput:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        outline: none;
+    }
+
+    /* SEARCH button: full width, proper height */
+    button#searchBtn,
+    button.btn-primary {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        font-size: 0.9375rem;
+    }
+
+    /* Results: single column on tiny screens */
+    .results-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+
+    /* Drawer: full-screen slide */
+    .drawer {
+        width: 100%;
+        right: -100%;
+    }
+
+    /* Modal: nearly full-screen */
+    .modal {
+        max-width: 100%;
+        border-radius: var(--radius) var(--radius) 0 0;
+        max-height: 92vh;
+    }
+
+    .overlay {
+        align-items: flex-end;
+        padding: 0;
+    }
+}
+
+/* Mid phones (481px – 640px) */
+@media (min-width: 481px) and (max-width: 640px) {
+    .provider-row {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .input-group {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .select-wrapper {
+        min-width: unset;
+        width: 100%;
+    }
+
+    .search-type-container,
+    .search-switch {
+        width: 100%;
+    }
+
+    .switch-opt {
+        flex: 1;
+        text-align: center;
+    }
+
+    /* Search input: full width with visible border when stacked */
+    .input-group input[type="text"],
+    input[type="text"]#searchInput {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg-surface);
+        padding: 0.75rem 1rem;
+        width: 100%;
+        min-width: 0;
+    }
+
+    button#searchBtn,
+    button.btn-primary {
+        width: 100%;
+        padding: 0.75rem 1rem;
+    }
+
+    .results-grid {
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 1rem;
+    }
+
     .drawer {
         width: 100%;
         right: -100%;
     }
 }
 
+/* Tablets (641px – 1023px) */
+@media (min-width: 641px) and (max-width: 1023px) {
+    .results-grid {
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
+
+    .drawer {
+        width: 360px;
+        right: -360px;
+    }
+}
+
+/* Desktop (1024px+) */
 @media (min-width: 1024px) {
     .results-grid {
         grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
