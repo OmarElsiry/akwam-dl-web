@@ -187,8 +187,9 @@ h1 {
 /* Input group */
 .input-group {
   display: flex; gap: 0.75rem; align-items: stretch;
+  flex-wrap: wrap;
 }
-.select-wrapper { min-width: 130px; }
+.select-wrapper { flex-shrink: 0; }
 
 .search-type-container { display: flex; align-items: center; height: 100%; }
 .search-switch {
@@ -243,6 +244,33 @@ button.btn-primary:hover {
   transform: translateY(-1px); 
 }
 button.btn-primary:active { transform: translateY(0); }
+
+@media (max-width: 640px) {
+  .provider-row {
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+  .input-group {
+    flex-direction: column;
+  }
+  .select-wrapper {
+    width: 100%;
+  }
+  .search-switch {
+    width: 100%;
+    justify-content: center;
+  }
+  .switch-opt {
+    flex: 1;
+  }
+  input[type="text"] {
+    width: 100%;
+  }
+  button.btn-primary {
+    width: 100%;
+    padding: 14px 16px;
+  }
+}
 
 /* ============================================================
    Loading Spinner
