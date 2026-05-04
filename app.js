@@ -307,7 +307,7 @@ function handleItemClick(item, type) {
 // ============================================================
 async function handleAkwamClick(item, type, isBackAction = false) {
     if (type === 'series') {
-        openModal('Select Episode', !isBackAction && state.modalHistory.length === 0);
+        openModal('Select Episode', state.modalHistory.length > 0);
         showModalLoading(true);
         const data = await apiGetEpisodes(item.url);
         state.currentEpisodes = data.episodes || [];
@@ -351,7 +351,7 @@ async function handleAkwamClick(item, type, isBackAction = false) {
 }
 
 async function handleQualitySelect(url) {
-    openModal('Select Quality', true);
+    openModal('Select Quality', state.modalHistory.length > 0);
     showModalLoading(true);
     const data = await apiGetQualities(url);
     showModalLoading(false);
@@ -367,7 +367,7 @@ async function handleQualitySelect(url) {
 }
 
 async function resolveFinalUrl(link_id) {
-    openModal('Finalizing Link');
+    openModal('Finalizing Link', state.modalHistory.length > 0);
     dom.modalList.innerHTML = `
         <div style="text-align:center;padding:2.5rem;">
             <p style="margin-bottom:2rem;color:var(--text-secondary);">Preparing your secure direct link...</p>
@@ -379,7 +379,7 @@ async function resolveFinalUrl(link_id) {
 }
 
 function renderFinalUrlScreen(url) {
-    dom.modalTitle.innerText = 'Direct Link';
+    openModal('Direct Link', state.modalHistory.length > 0);
     dom.modalList.innerHTML = `
         <div class="result-container">
             <p class="result-label">Direct Link:</p>
@@ -401,7 +401,7 @@ function renderFinalUrlScreen(url) {
 
 function playVideo(url) {
     state.modalHistory.push(() => renderFinalUrlScreen(url));
-    dom.modalTitle.innerText = 'Playing Video';
+    openModal('Playing Video', state.modalHistory.length > 0, true);
     dom.modalList.innerHTML = `
         <div style="padding:1rem;width:100%;display:flex;flex-direction:column;background:#000;border-radius:var(--radius);overflow:hidden;">
             <video controls autoplay playsinline style="width:100%;height:auto;outline:none;background:#000;border-radius:var(--radius);object-fit:contain;">
@@ -413,7 +413,7 @@ function playVideo(url) {
 
 async function handleBulkResolve(episodesToResolve) {
     if (!episodesToResolve || episodesToResolve.length === 0) return;
-    openModal('Bulk Resolving...');
+    openModal('Bulk Resolving...', state.modalHistory.length > 0);
     dom.modalList.innerHTML = `<div style="text-align:center;padding:2.5rem;"><p style="margin-bottom:2rem;color:var(--text-secondary);">Processing ${episodesToResolve.length} items in parallel...</p><div class="spinner" style="margin:0 auto;"></div></div>`;
     try {
         const data = await apiBulkResolve(episodesToResolve);
