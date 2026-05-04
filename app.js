@@ -235,9 +235,9 @@ function renderResults(results, type) {
             ? '<span class="source-badge source-egydead">EgyDead</span>'
             : '<span class="source-badge source-akwam">Akwam</span>';
 
-        // Thumbnail for EgyDead results (via wsrv.nl CDN to bypass Cloudflare CORP)
+        // Thumbnail for EgyDead results (via corsproxy.io to bypass Cloudflare/CORP)
         const thumbHtml = (isEgyDead && item.thumbnail)
-            ? `<div class="result-thumb"><img src="https://wsrv.nl/?url=${encodeURIComponent(item.thumbnail)}&w=120&h=170&fit=cover&output=webp" alt="" loading="lazy"></div>`
+            ? `<div class="result-thumb"><img src="https://corsproxy.io/?${encodeURIComponent(item.thumbnail)}" alt="" loading="lazy"></div>`
             : '';
 
         const div = document.createElement('div');

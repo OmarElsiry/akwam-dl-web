@@ -2,9 +2,9 @@ import re, os
 from requests import get
 
 HTTP = 'https://'
-RGX_DL_URL = r'https?://(\w*\.*\w+\.\w+/link/\d+)'
-RGX_SHORTEN_URL = r'https?://(\w*\.*\w+\.\w+/download/.*?)"'
-RGX_DIRECT_URL = r'([a-z0-9]{4,}\.\w+\.\w+/download/.*?)"'
+RGX_DL_URL = r'https?://([\w.-]+/link/\d+)'
+RGX_SHORTEN_URL = r'https?://([\w.-]+/download/.*?)"'
+RGX_DIRECT_URL = r'https?://([^"]+)"\s+download'
 RGX_QUALITY_TAG = rf'tab-content quality.*?a href="{RGX_DL_URL}"'
 RGX_SIZE_TAG = r'font-size-14 mr-auto">([0-9.MGB ]+)</'
 
