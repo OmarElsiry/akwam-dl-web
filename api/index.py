@@ -5,7 +5,6 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict
 from .akwam_api import AkwamAPI
 from .egydead_api import EgyDeadAPI
-from .browser_extractor import get_mp4_via_browser
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi.responses import HTMLResponse, FileResponse
@@ -83,9 +82,7 @@ async def get_qualities(req: LinkRequest):
 @app.post("/api/resolve")
 async def resolve(req: LinkRequest):
     try:
-        dl_links = akwam.get_download_links(req.url)
-        dl_page_url = dl_links[0] if dl_links else None
-        url = await get_mp4_via_browser(dl_page_url) if dl_page_url else None
+        url = akwam.resolve_direct_url(req.url)
         return {"url": url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -131,19 +128,11 @@ async def bulk_resolve(req: BulkResolveRequest):
             if best_q:
                 episode_names.append(req.urls[i]['name'])
                 episode_qualities.append(best_q)
-                
-                dl_links = akwam.get_download_links(best_q['link_id'])
-                dl_page_url = dl_links[0] if dl_links else None
-                
-                if dl_page_url:
-                    resolve_tasks.append(
-                        get_mp4_via_browser(dl_page_url)
-                    )
-                else:
-                    resolve_tasks.append(asyncio.sleep(0, result=None))
-                
+                resolve_tasks.append(
+                    loop.run_in_executor(None, akwam.resolve_direct_url, best_q['link_id'])
+                )
                 dl_links_tasks.append(
-                    loop.run_in_executor(None, lambda links=dl_links: links)
+                    loop.run_in_executor(None, akwam.get_download_links, best_q['link_id'])
                 )
 
         # Step 3: Resolve all in parallel
