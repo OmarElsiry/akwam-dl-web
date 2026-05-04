@@ -380,23 +380,44 @@ async function resolveFinalUrl(link_id) {
 
 function renderFinalUrlScreen(url) {
     openModal('Direct Link', state.modalHistory.length > 0);
+    const isDirectMp4 = url.includes('.mp4') || url.includes('.mkv');
+    
+    let streamBtnHtml = '';
+    if (isDirectMp4) {
+        streamBtnHtml = `
+            <button class="btn-secondary" style="border-color:#f39c12;color:#f39c12;padding:0.85rem;" id="btnStream">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:8px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                STREAM IN BROWSER
+            </button>
+        `;
+    } else {
+        streamBtnHtml = `
+            <p style="color:var(--text-secondary);font-size:0.85rem;text-align:center;margin-top:0.5rem;">
+                This is a secure Akwam page. Open it in your browser to start the final download.
+            </p>
+        `;
+    }
+
     dom.modalList.innerHTML = `
         <div class="result-container">
-            <p class="result-label">Direct Link:</p>
+            <p class="result-label">${isDirectMp4 ? 'Direct Link:' : 'Download Page:'}</p>
             <div class="link-display-box">
                 <code class="raw-url">${url}</code>
                 <button class="btn-secondary btn-sm" id="btnCopySingle">COPY</button>
             </div>
             <div style="margin-top:1.5rem;display:flex;flex-direction:column;gap:0.75rem;">
-                <a href="${url}" class="btn-primary" style="text-align:center;text-decoration:none;" target="_blank">DOWNLOAD VIA BROWSER</a>
-                <button class="btn-secondary" style="border-color:#f39c12;color:#f39c12;padding:0.85rem;" id="btnStream">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:8px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                    STREAM IN BROWSER
-                </button>
+                <a href="${url}" class="btn-primary" style="text-align:center;text-decoration:none;" target="_blank">
+                    ${isDirectMp4 ? 'DOWNLOAD VIA BROWSER' : 'OPEN DOWNLOAD PAGE'}
+                </a>
+                ${streamBtnHtml}
             </div>
         </div>`;
+    
     document.getElementById('btnCopySingle').onclick = e => copyLinkToClipboard(url, e.target);
-    document.getElementById('btnStream').onclick = () => playVideo(url);
+    if (isDirectMp4) {
+        const streamBtn = document.getElementById('btnStream');
+        if (streamBtn) streamBtn.onclick = () => playVideo(url);
+    }
 }
 
 function playVideo(url) {
