@@ -92,32 +92,69 @@ class BulkResolveRequest(BaseModel):
 
 @app.post("/api/bulk-resolve")
 async def bulk_resolve(req: BulkResolveRequest):
+    """
+    Bulk-resolve episode download links.
+
+    For each episode URL:
+      1. Fetch available qualities from the episode page.
+      2. Pick the best quality (720p preferred, else first available).
+      3. Call resolve_direct_url on the link_id — this now returns either:
+         - A direct .mp4 URL (if the CDN server redirects directly), OR
+         - The akwam /download/ countdown page URL (JS-gated fallback).
+      4. Also fetch all available download server links via get_download_links.
+
+    Returns a list of {name, url, quality, size, download_links}.
+    """
     try:
         loop = asyncio.get_event_loop()
-        tasks = []
-        for item in req.urls:
-            tasks.append(loop.run_in_executor(None, akwam.get_qualities, item['url']))
-        
-        all_qualities = await asyncio.gather(*tasks)
-        
+
+        # Step 1: Get qualities for all episodes in parallel
+        quality_tasks = [
+            loop.run_in_executor(None, akwam.get_qualities, item['url'])
+            for item in req.urls
+        ]
+        all_qualities = await asyncio.gather(*quality_tasks)
+
+        # Step 2: Build resolve + download-links tasks for episodes that have qualities
         resolve_tasks = []
+        dl_links_tasks = []
         episode_names = []
+        episode_qualities = []
+
         for i, qualities in enumerate(all_qualities):
             best_q = next((q for q in qualities if q['quality'] == '720p'), None)
             if not best_q and qualities:
                 best_q = qualities[0]
-            
             if best_q:
                 episode_names.append(req.urls[i]['name'])
-                resolve_tasks.append(loop.run_in_executor(None, akwam.resolve_direct_url, best_q['link_id']))
+                episode_qualities.append(best_q)
+                resolve_tasks.append(
+                    loop.run_in_executor(None, akwam.resolve_direct_url, best_q['link_id'])
+                )
+                dl_links_tasks.append(
+                    loop.run_in_executor(None, akwam.get_download_links, best_q['link_id'])
+                )
 
-        direct_urls = await asyncio.gather(*resolve_tasks)
-        
+        # Step 3: Resolve all in parallel
+        direct_urls, all_dl_links = await asyncio.gather(
+            asyncio.gather(*resolve_tasks),
+            asyncio.gather(*dl_links_tasks),
+        )
+
+        # Step 4: Build results
         results = []
-        for name, url in zip(episode_names, direct_urls):
+        for name, url, quality, dl_links in zip(
+            episode_names, direct_urls, episode_qualities, all_dl_links
+        ):
             if url:
-                results.append({"name": name, "url": url})
-        
+                results.append({
+                    "name": name,
+                    "url": url,                            # primary URL (direct or download page)
+                    "quality": quality.get('quality', '720p'),
+                    "size": quality.get('size', ''),
+                    "download_links": dl_links,            # all available CDN servers
+                })
+
         return {"results": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -3,7 +3,9 @@ from requests import get
 
 HTTP = 'https://'
 RGX_DL_URL = r'https?://([\w.-]+/link/\d+)'
-RGX_SHORTEN_URL = r'https?://([\w.-]+/download/.*?)"'
+# Matches the first download server URL in the /link/ page
+RGX_SHORTEN_URL = r'https?://([\w.-]+/download/[^"]+)"'
+# Matches a direct file URL with a download attribute (legacy sites)
 RGX_DIRECT_URL = r'https?://([^"]+)"\s+download'
 RGX_QUALITY_TAG = rf'tab-content quality.*?a href="{RGX_DL_URL}"'
 RGX_SIZE_TAG = r'font-size-14 mr-auto">([0-9.MGB ]+)</'
@@ -88,30 +90,79 @@ class AkwamAPI:
                 
         return avail_qualities
 
-    def resolve_direct_url(self, link_id_url):
-        # 1. Access the intermediate download page
+    def get_download_links(self, link_id_url):
+        """
+        Returns all available download server URLs from the /link/ page.
+        Akwam lists multiple CDN servers (main + mirrors) on this page.
+        The returned URLs are the akwam /download/ pages — users click them
+        and wait for the countdown to get the actual file.
+        """
         url = HTTP + link_id_url
-        r1 = safe_get(url)
-        
-        # 2. Extract the redirect/shortened URL
-        m1 = re.search(RGX_SHORTEN_URL, r1.content.decode())
-        if not m1:
-            return None
-        
-        short_url = HTTP + m1.group(1)
-        
-        # 3. Access the final page containing the direct link
-        r2 = safe_get(short_url)
-        
-        # Sometimes it requires one more redirect or has a meta refresh
-        final_html = r2.content.decode()
-        if short_url != r2.url:
-            r2 = safe_get(r2.url)
-            final_html = r2.content.decode()
+        try:
+            r = safe_get(url)
+            html = r.content.decode('utf-8', errors='replace')
+        except Exception:
+            return []
 
-        # 4. Extract the actual direct file URL
-        m2 = re.search(RGX_DIRECT_URL, final_html)
-        if not m2:
+        # Find all unique /download/ hrefs (multiple CDN servers)
+        raw = re.findall(r'href="(https?://[^"]+/download/[^"]+)"', html)
+        seen = set()
+        servers = []
+        for u in raw:
+            if u not in seen:
+                seen.add(u)
+                servers.append(u)
+        return servers
+
+    def resolve_direct_url(self, link_id_url):
+        """
+        Attempts to resolve a direct file URL from an akwam link_id.
+
+        Akwam's download flow:
+          1. go.akwam.com.co/link/{id}  — lists download server buttons
+          2. akwam.com.co/download/...  — JS-gated countdown page (2.2s timer)
+          3. Actual .mp4 file URL       — injected by obfuscated JS, not in HTML
+
+        Because step 3 requires JavaScript execution, we fall back to returning
+        the most accessible download page URL (step 2 / main server) so users
+        can open it in a browser to complete the download.
+        """
+        url = HTTP + link_id_url
+
+        try:
+            r1 = safe_get(url)
+            html1 = r1.content.decode('utf-8', errors='replace')
+        except Exception:
             return None
-            
-        return HTTP + m2.group(1)
+
+        # Collect all download server links from the /link/ page
+        raw_links = re.findall(r'href="(https?://[^"]+/download/[^"]+)"', html1)
+        seen = set()
+        dl_links = []
+        for u in raw_links:
+            if u not in seen:
+                seen.add(u)
+                dl_links.append(u)
+
+        if not dl_links:
+            # Last resort: return the /link/ page itself as the download URL
+            return url
+
+        # Try following each server link for a direct file redirect
+        for dl_url in dl_links:
+            try:
+                r2 = safe_get(dl_url, allow_redirects=True, timeout=20)
+                ct = r2.headers.get('content-type', '')
+                # If the server redirected directly to a file, return it
+                if any(x in ct for x in ('video', 'octet-stream', 'mp4', 'mkv')):
+                    return r2.url
+                # If the final URL itself looks like a video file
+                final = r2.url
+                if any(final.endswith(ext) for ext in ('.mp4', '.mkv', '.avi', '.webm', '.m3u8')):
+                    return final
+            except Exception:
+                continue
+
+        # None of the servers gave a direct file — return the main download page
+        # (the user can open it in a browser; the JS countdown will reveal the file)
+        return dl_links[0]
