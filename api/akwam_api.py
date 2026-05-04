@@ -152,17 +152,26 @@ class AkwamAPI:
         for dl_url in dl_links:
             try:
                 r2 = safe_get(dl_url, allow_redirects=True, timeout=20)
+                
+                # Check 1: Did the server redirect directly to the file?
                 ct = r2.headers.get('content-type', '')
-                # If the server redirected directly to a file, return it
                 if any(x in ct for x in ('video', 'octet-stream', 'mp4', 'mkv')):
                     return r2.url
-                # If the final URL itself looks like a video file
                 final = r2.url
                 if any(final.endswith(ext) for ext in ('.mp4', '.mkv', '.avi', '.webm', '.m3u8')):
                     return final
+                    
+                # Check 2: Akwam updated their site to embed the mp4 link in the HTML instead of redirecting
+                html2 = r2.content.decode('utf-8', errors='replace')
+                mp4_matches = re.findall(r'href=["\']([^"\']+\.mp4)["\']', html2)
+                if mp4_matches:
+                    return mp4_matches[0]
+                    
+                mkv_matches = re.findall(r'href=["\']([^"\']+\.mkv)["\']', html2)
+                if mkv_matches:
+                    return mkv_matches[0]
             except Exception:
                 continue
 
         # None of the servers gave a direct file — return the main download page
-        # (the user can open it in a browser; the JS countdown will reveal the file)
         return dl_links[0]
