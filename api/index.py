@@ -201,24 +201,33 @@ def _playwright_stream_video(link_id_url: str, range_header: str = None):
         return None, None
 
 
-from fastapi.responses import RedirectResponse
+@app.get("/api/akwam-resolve-stream")
+async def akwam_resolve_stream(link_id: str):
+    """Resolve an Akwam download link to a direct MP4 URL.
 
-@app.get("/api/akwam-stream")
-async def akwam_stream(link_id: str, request: Request):
-    """Stream Akwam video.
-
-    We cannot proxy the stream because s301d5.downet.net blocks Datacenter IPs
-    from fetching the actual video data. Instead, we use Playwright to resolve
-    the token, and then redirect the client to the direct MP4 link so they
-    download/stream it from their own residential IP.
+    The Akwam CDN (downet.net) blocks ALL requests from datacenter IPs,
+    including headless browsers running on this server.  Proxying and
+    redirecting both fail.  Instead we:
+      1. Use Playwright to navigate the JS-gated countdown page and
+         extract the activated MP4 URL.
+      2. Return the raw URL as JSON so the **user's own browser** can
+         open it directly (new tab / window.location), which works
+         because it uses their residential IP.
     """
     if not link_id:
         raise HTTPException(status_code=400, detail="Missing 'link_id'")
 
+    # Normalise: the frontend may pass either a bare numeric ID ("143994")
+    # or the full path ("go.akwam.com.co/link/143994").
+    import re as _re_norm
+    id_match = _re_norm.search(r'(\d+)$', link_id)
+    if not id_match:
+        raise HTTPException(status_code=400, detail="Invalid link_id format")
+    numeric_id = id_match.group(1)
+
     loop = asyncio.get_event_loop()
-    # Use the playwright url fetcher directly instead of the proxy wrapper
     mp4_url, referer, cookie = await loop.run_in_executor(
-        None, _playwright_get_video_url, f"go.akwam.com.co/link/{link_id}"
+        None, _playwright_get_video_url, f"go.akwam.com.co/link/{numeric_id}"
     )
 
     if not mp4_url:
@@ -227,8 +236,7 @@ async def akwam_stream(link_id: str, request: Request):
             detail="Could not resolve a streamable URL from Akwam"
         )
 
-    # Redirect the user's browser directly to the CDN.
-    return RedirectResponse(url=mp4_url)
+    return {"url": mp4_url, "referer": referer}
 
 
 class BulkResolveRequest(BaseModel):

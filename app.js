@@ -427,49 +427,105 @@ function playVideo(url, linkId) {
 
     const isAkwamCdn = url.includes('downet.net') || url.includes('akwam');
 
-    // For Akwam CDN links, stream through our Playwright-powered proxy
-    // which handles the JavaScript-based CDN protection automatically
-    let videoSrc = url;
     if (isAkwamCdn && linkId) {
-        videoSrc = `/api/akwam-stream?link_id=${encodeURIComponent(linkId)}`;
-
-        // Show loading state while Playwright resolves the CDN token
+        // The Akwam CDN blocks all datacenter IPs (even headless browsers on
+        // the server). We CANNOT proxy or redirect. Instead we:
+        //   1. Ask the server to resolve the MP4 URL via Playwright
+        //   2. Open it directly in the user's browser (their residential IP works)
         dom.modalList.innerHTML = `
             <div style="text-align:center;padding:3rem;">
                 <div class="spinner" style="margin:0 auto 1.5rem;width:36px;height:36px;"></div>
                 <p style="color:var(--text-secondary);margin-bottom:0.5rem;">Bypassing CDN protection...</p>
-                <p style="color:var(--text-muted);font-size:0.8rem;">This uses a headless browser to activate the download token. Takes ~8 seconds.</p>
+                <p style="color:var(--text-muted);font-size:0.8rem;">Resolving the direct download link. Takes ~10 seconds.</p>
             </div>`;
+
+        fetch(`/api/akwam-resolve-stream?link_id=${encodeURIComponent(linkId)}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.url) {
+                    const mp4Url = data.url;
+                    dom.modalList.innerHTML = `
+                        <div style="padding:1.5rem;text-align:center;">
+                            <div style="margin-bottom:1.5rem;">
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:0.75rem;">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                <p style="color:var(--text-primary);font-weight:600;font-size:1.05rem;margin-bottom:0.25rem;">Direct Link Ready!</p>
+                                <p style="color:var(--text-secondary);font-size:0.8rem;">CDN protection bypassed successfully.</p>
+                            </div>
+                            <div class="link-display-box" style="margin-bottom:1.5rem;">
+                                <code class="raw-url" style="font-size:0.7rem;word-break:break-all;">${mp4Url}</code>
+                                <button class="btn-secondary btn-sm" id="btnCopyStream">COPY</button>
+                            </div>
+                            <div style="display:flex;flex-direction:column;gap:0.75rem;">
+                                <a href="${mp4Url}" class="btn-primary" style="text-align:center;text-decoration:none;" target="_blank" rel="noopener noreferrer" id="btnOpenStream">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.3rem;">
+                                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                    </svg>
+                                    OPEN VIDEO IN NEW TAB
+                                </a>
+                                <button class="btn-secondary" id="btnTryEmbed" style="padding:0.85rem;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.3rem;">
+                                        <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                                        <line x1="7" y1="2" x2="7" y2="22"></line>
+                                        <line x1="17" y1="2" x2="17" y2="22"></line>
+                                        <line x1="2" y1="12" x2="22" y2="12"></line>
+                                        <line x1="2" y1="7" x2="7" y2="7"></line>
+                                        <line x1="2" y1="17" x2="7" y2="17"></line>
+                                        <line x1="17" y1="17" x2="22" y2="17"></line>
+                                        <line x1="17" y1="7" x2="22" y2="7"></line>
+                                    </svg>
+                                    Try Embedded Player
+                                </button>
+                            </div>
+                            <p style="color:var(--text-muted);font-size:0.7rem;margin-top:1rem;">
+                                The video opens directly from the CDN using your connection. If the embedded player fails, use "Open in New Tab".
+                            </p>
+                        </div>`;
+                    
+                    document.getElementById('btnCopyStream').onclick = e => copyLinkToClipboard(mp4Url, e.target);
+                    document.getElementById('btnTryEmbed').onclick = () => {
+                        // Try embedding directly — might work since it's the user's browser
+                        dom.modalList.innerHTML = `
+                            <div style="padding:1rem;width:100%;display:flex;flex-direction:column;background:#000;border-radius:var(--radius);overflow:hidden;">
+                                <video id="akwamVideo" controls autoplay playsinline referrerpolicy="no-referrer" style="width:100%;max-height:70vh;outline:none;background:#000;border-radius:var(--radius);object-fit:contain;">
+                                    <source src="${mp4Url}" type="video/mp4">
+                                    Your browser does not support HTML5 video.
+                                </video>
+                                <p id="streamStatus" style="color:var(--text-secondary);font-size:0.8rem;text-align:center;padding:0.5rem;">Loading stream from CDN...</p>
+                            </div>`;
+                        const video = document.getElementById('akwamVideo');
+                        const status = document.getElementById('streamStatus');
+                        if (video) {
+                            video.addEventListener('canplay', () => { if (status) status.textContent = ''; });
+                            video.addEventListener('error', () => {
+                                if (status) {
+                                    status.style.color = '#f87171';
+                                    status.innerHTML = 'Embedded playback failed. <a href="' + mp4Url + '" target="_blank" style="color:var(--accent);text-decoration:underline;">Open in new tab instead</a>';
+                                }
+                            });
+                        }
+                    };
+                } else {
+                    dom.modalList.innerHTML = '<p style="color:var(--danger);text-align:center;padding:2rem;">Failed to resolve stream URL. Try again.</p>';
+                }
+            })
+            .catch(err => {
+                dom.modalList.innerHTML = `<p style="color:var(--danger);text-align:center;padding:2rem;">Error: ${err.message}</p>`;
+            });
+        return;
     }
 
-    // Use a small delay for Akwam to give the UI feedback before blocking on load
-    const delay = isAkwamCdn ? 100 : 0;
-    setTimeout(() => {
-        dom.modalList.innerHTML = `
-            <div style="padding:1rem;width:100%;display:flex;flex-direction:column;background:#000;border-radius:var(--radius);overflow:hidden;">
-                <video id="akwamVideo" controls autoplay playsinline referrerpolicy="no-referrer" crossorigin="anonymous" style="width:100%;max-height:70vh;outline:none;background:#000;border-radius:var(--radius);object-fit:contain;">
-                    <source src="${videoSrc}" type="video/mp4">
-                    Your browser does not support HTML5 video.
-                </video>
-                ${isAkwamCdn ? '<p id="streamStatus" style="color:var(--text-secondary);font-size:0.8rem;text-align:center;padding:0.5rem;">Loading stream directly from CDN...</p>' : ''}
-            </div>`;
-
-        if (isAkwamCdn) {
-            const video = document.getElementById('akwamVideo');
-            const status = document.getElementById('streamStatus');
-            if (video) {
-                video.addEventListener('loadstart', () => { if (status) status.textContent = 'Connecting to stream...'; });
-                video.addEventListener('progress', () => { if (status) status.textContent = 'Buffering...'; });
-                video.addEventListener('canplay', () => { if (status) status.textContent = ''; });
-                video.addEventListener('error', () => {
-                    if (status) {
-                        status.style.color = '#f87171';
-                        status.textContent = 'Stream failed. The CDN may be blocking this content. Try again or use Download via Browser.';
-                    }
-                });
-            }
-        }
-    }, delay);
+    // Non-Akwam videos: play directly in embedded player
+    dom.modalList.innerHTML = `
+        <div style="padding:1rem;width:100%;display:flex;flex-direction:column;background:#000;border-radius:var(--radius);overflow:hidden;">
+            <video id="akwamVideo" controls autoplay playsinline style="width:100%;max-height:70vh;outline:none;background:#000;border-radius:var(--radius);object-fit:contain;">
+                <source src="${url}" type="video/mp4">
+                Your browser does not support HTML5 video.
+            </video>
+        </div>`;
 }
 
 

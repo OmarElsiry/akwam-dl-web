@@ -25,22 +25,18 @@ with sync_playwright() as p:
     try:
         page.goto(url, wait_until='domcontentloaded', timeout=30000)
         
-        # Click the first download link
         try:
             page.evaluate("document.querySelector('a[href*=\"/download/\"]').click()")
         except:
-            print("Failed to click first download link")
-            sys.exit(1)
+            pass
             
         page.wait_for_timeout(4000)
         
-        # Click the actual mp4 download button
         try:
             page.evaluate("document.querySelector('.link.btn.btn-light').click()")
             page.wait_for_timeout(4000)
         except:
-            print("Failed to click second download link")
-            sys.exit(1)
+            pass
             
         if not mp4_url:
             print("Did not intercept mp4 url")
@@ -48,7 +44,11 @@ with sync_playwright() as p:
             
         print("Got MP4 URL:", mp4_url)
         
-        # Now use curl_cffi to stream it
+        # GET COOKIES
+        pw_cookies = context.cookies()
+        cookie_dict = {c['name']: c['value'] for c in pw_cookies}
+        print("Cookies:", cookie_dict)
+        
         headers = {
             'Referer': 'https://akwam.com.co/',
             'Accept': '*/*',
@@ -59,19 +59,13 @@ with sync_playwright() as p:
         }
         
         print("Testing streaming with curl_cffi...")
-        resp = requests.get(mp4_url, headers=headers, impersonate="chrome120", stream=True, timeout=15)
+        resp = requests.get(mp4_url, headers=headers, cookies=cookie_dict, impersonate="chrome120")
         print("Status:", resp.status_code)
-        print("Headers:", resp.headers)
         
-        # Also try to read 1 chunk
-        if resp.status_code in [200, 206]:
-            for chunk in resp.iter_content(chunk_size=1024):
-                if chunk:
-                    print("Successfully streamed chunk of size", len(chunk))
-                    break
-        else:
-            print("Failed. Status:", resp.status_code)
+        if resp.status_code != 200 and resp.status_code != 206:
             print("Body:", resp.text)
+        else:
+            print("Successfully streamed!")
         
     except Exception as e:
         print("Exception:", e)
