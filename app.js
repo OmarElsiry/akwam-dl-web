@@ -436,7 +436,7 @@ function playVideo(url, linkId) {
             <div style="text-align:center;padding:3rem;">
                 <div class="spinner" style="margin:0 auto 1.5rem;width:36px;height:36px;"></div>
                 <p style="color:var(--text-secondary);margin-bottom:0.5rem;">Bypassing CDN protection...</p>
-                <p style="color:var(--text-muted);font-size:0.8rem;">Resolving the direct download link. Takes ~10 seconds.</p>
+                <p style="color:var(--text-muted);font-size:0.8rem;">Resolving the direct download link. Takes ~3 seconds.</p>
             </div>`;
 
         fetch(`/api/akwam-resolve-stream?link_id=${encodeURIComponent(linkId)}`)

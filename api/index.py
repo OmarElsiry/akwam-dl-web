@@ -201,24 +201,80 @@ def _playwright_stream_video(link_id_url: str, range_header: str = None):
         return None, None
 
 
+def _fast_resolve_video_url(link_id: str):
+    """Resolve an Akwam link to a direct CDN MP4 URL using plain HTTP requests.
+
+    Uses the same approach as the original main.py CLI tool:
+      1. GET /link/{id}  → parse /download/ URLs
+      2. GET /download/… → parse direct CDN file URL from HTML
+
+    The MP4 URL is already present in the raw HTML source — no JavaScript
+    execution or Playwright browser needed.  This resolves in ~2s vs ~10s.
+
+    Returns (mp4_url, download_page_url) or (None, None).
+    """
+    import re as _re
+    import requests as _req
+
+    HTTP = 'https://'
+    RGX_SHORTEN = r'https?://(\w*\.*\w+\.\w+/download/.*?)"'
+    RGX_DIRECT  = r'([a-z0-9]{4,}\.\w+\.\w+/download/.*?)"'
+    HEADERS = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                      'AppleWebKit/537.36 (KHTML, like Gecko) '
+                      'Chrome/120.0.0.0 Safari/537.36',
+    }
+
+    try:
+        # Step 1: GET the /link/ page
+        r1 = _req.get(f'{HTTP}go.akwam.com.co/link/{link_id}',
+                       headers=HEADERS, timeout=30)
+        shorten = _re.findall(RGX_SHORTEN, r1.content.decode('utf-8', errors='replace'))
+        if not shorten:
+            return None, None
+
+        # Step 2: GET the download page
+        dl_url = HTTP + shorten[0]
+        r2 = _req.get(dl_url, headers=HEADERS, timeout=30)
+        # Handle redirect (as main.py does)
+        if dl_url != r2.url:
+            r2 = _req.get(r2.url, headers=HEADERS, timeout=30)
+
+        html = r2.content.decode('utf-8', errors='replace')
+
+        # Step 3: Extract the CDN file URL (filter out self-referencing akwam links)
+        all_matches = _re.findall(RGX_DIRECT, html)
+        cdn_urls = [m for m in all_matches
+                    if 'downet.net' in m or m.endswith('.mp4') or m.endswith('.mkv')]
+
+        if cdn_urls:
+            return HTTP + cdn_urls[0], dl_url
+
+        # Fallback: try href-based patterns for .mp4/.mkv
+        mp4 = _re.findall(r'href=["\']([^"\']+\.mp4)["\']', html)
+        if mp4:
+            return mp4[0], dl_url
+        mkv = _re.findall(r'href=["\']([^"\']+\.mkv)["\']', html)
+        if mkv:
+            return mkv[0], dl_url
+
+        return None, None
+    except Exception:
+        return None, None
+
+
 @app.get("/api/akwam-resolve-stream")
 async def akwam_resolve_stream(link_id: str):
     """Resolve an Akwam download link to a direct MP4 URL.
 
-    The Akwam CDN (downet.net) blocks ALL requests from datacenter IPs,
-    including headless browsers running on this server.  Proxying and
-    redirecting both fail.  Instead we:
-      1. Use Playwright to navigate the JS-gated countdown page and
-         extract the activated MP4 URL.
-      2. Return the raw URL as JSON so the **user's own browser** can
-         open it directly (new tab / window.location), which works
-         because it uses their residential IP.
+    Uses fast HTTP-only resolution (~2s) adapted from the original CLI tool.
+    The CDN blocks datacenter IPs from downloading, but the URL extraction
+    works fine — the user's own browser opens the URL directly.
     """
     if not link_id:
         raise HTTPException(status_code=400, detail="Missing 'link_id'")
 
-    # Normalise: the frontend may pass either a bare numeric ID ("143994")
-    # or the full path ("go.akwam.com.co/link/143994").
+    # Normalise: accept both "143994" and "go.akwam.com.co/link/143994"
     import re as _re_norm
     id_match = _re_norm.search(r'(\d+)$', link_id)
     if not id_match:
@@ -226,9 +282,17 @@ async def akwam_resolve_stream(link_id: str):
     numeric_id = id_match.group(1)
 
     loop = asyncio.get_event_loop()
-    mp4_url, referer, cookie = await loop.run_in_executor(
-        None, _playwright_get_video_url, f"go.akwam.com.co/link/{numeric_id}"
+
+    # Try fast HTTP resolution first (~2s)
+    mp4_url, referer = await loop.run_in_executor(
+        None, _fast_resolve_video_url, numeric_id
     )
+
+    # Fallback to Playwright if fast method fails
+    if not mp4_url:
+        mp4_url, referer, _ = await loop.run_in_executor(
+            None, _playwright_get_video_url, f"go.akwam.com.co/link/{numeric_id}"
+        )
 
     if not mp4_url:
         raise HTTPException(
