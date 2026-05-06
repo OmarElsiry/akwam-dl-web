@@ -87,6 +87,36 @@ async def resolve(req: LinkRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ------------------------------------------------------------------ #
+#  Akwam fresh-URL resolver
+#  Returns a freshly resolved CDN URL for direct browser playback.
+#  The CDN tokens expire quickly, so we resolve on-demand right when
+#  the user clicks "Stream Online" rather than reusing a stale URL.
+# ------------------------------------------------------------------ #
+
+@app.get("/api/akwam/fresh-url")
+async def akwam_fresh_url(link_id: str):
+    """Resolve a fresh mp4 URL from Akwam's download page.
+
+    CDN tokens are short-lived — this endpoint should be called right
+    before playback so the browser gets a fresh, valid URL.
+    """
+    if not link_id:
+        raise HTTPException(status_code=400, detail="Missing 'link_id'")
+
+    loop = asyncio.get_event_loop()
+
+    session, mp4_url, dl_page = await loop.run_in_executor(
+        None, akwam.get_fresh_stream_url, link_id
+    )
+    if not mp4_url:
+        raise HTTPException(
+            status_code=502,
+            detail="Could not resolve a fresh URL from Akwam"
+        )
+
+    return {"url": mp4_url, "download_page": dl_page}
+
 class BulkResolveRequest(BaseModel):
     urls: List[Dict[str, str]] # List of {name: "...", url: "..."}
 
@@ -158,6 +188,7 @@ async def bulk_resolve(req: BulkResolveRequest):
         return {"results": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # ------------------------------------------------------------------ #
 #  EgyDead endpoints

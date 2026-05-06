@@ -374,24 +374,48 @@ async function resolveFinalUrl(link_id) {
             <div class="spinner" style="margin:0 auto;"></div>
         </div>`;
     const data = await apiResolve(link_id);
-    if (data.url) renderFinalUrlScreen(data.url);
+    if (data.url) renderFinalUrlScreen(data.url, link_id);
     else dom.modalList.innerHTML = '<p style="color:var(--danger);text-align:center;padding:2rem;">Error resolving link. Try another quality.</p>';
 }
 
-function renderFinalUrlScreen(url) {
+function renderFinalUrlScreen(url, linkId) {
     openModal('Direct Link', state.modalHistory.length > 0);
     const isDirectMp4 = url.includes('.mp4') || url.includes('.mkv');
+    const isAkwamCdn = url.includes('downet.net') || url.includes('akwam');
     
-    let streamBtnHtml = '';
-    if (isDirectMp4) {
-        streamBtnHtml = `
-                        <button class="btn-secondary" style="border-color:var(--warning);color:var(--warning);padding:0.85rem;" id="btnStream">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.3rem;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                            Stream Online
-                        </button>
+    let actionBtns = '';
+    if (isDirectMp4 && !isAkwamCdn) {
+        // Non-Akwam direct links — can stream natively
+        actionBtns = `
+            <a href="${url}" class="btn-primary" style="text-align:center;text-decoration:none;" target="_blank">
+                DOWNLOAD VIA BROWSER
+            </a>
+            <button class="btn-secondary" style="border-color:var(--warning);color:var(--warning);padding:0.85rem;" id="btnStream">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.3rem;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                Stream Online
+            </button>
+        `;
+    } else if (isDirectMp4 && isAkwamCdn) {
+        // Akwam CDN links — CDN requires JS execution on download page
+        // Resolve the download page URL from link_id for the user
+        actionBtns = `
+            <a href="${url}" class="btn-primary" style="text-align:center;text-decoration:none;opacity:0.5;pointer-events:none;" target="_blank">
+                DIRECT LINK (CDN Protected)
+            </a>
+            <button class="btn-secondary" style="border-color:#22d3ee;color:#22d3ee;padding:0.85rem;" id="btnOpenAkwam">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.3rem;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                Watch on Akwam (Opens Download Page)
+            </button>
+            <p style="color:var(--text-secondary);font-size:0.8rem;text-align:center;margin-top:0.25rem;">
+                ⏳ Wait ~3 seconds on the page, then click the green Download button.
+            </p>
         `;
     } else {
-        streamBtnHtml = `
+        // Non-direct link (download page URL)
+        actionBtns = `
+            <a href="${url}" class="btn-primary" style="text-align:center;text-decoration:none;" target="_blank">
+                OPEN DOWNLOAD PAGE
+            </a>
             <p style="color:var(--text-secondary);font-size:0.85rem;text-align:center;margin-top:0.5rem;">
                 This is a secure Akwam page. Open it in your browser to start the final download.
             </p>
@@ -406,22 +430,44 @@ function renderFinalUrlScreen(url) {
                 <button class="btn-secondary btn-sm" id="btnCopySingle">COPY</button>
             </div>
             <div style="margin-top:1.5rem;display:flex;flex-direction:column;gap:0.75rem;">
-                <a href="${url}" class="btn-primary" style="text-align:center;text-decoration:none;" target="_blank">
-                    ${isDirectMp4 ? 'DOWNLOAD VIA BROWSER' : 'OPEN DOWNLOAD PAGE'}
-                </a>
-                ${streamBtnHtml}
+                ${actionBtns}
             </div>
         </div>`;
     
     document.getElementById('btnCopySingle').onclick = e => copyLinkToClipboard(url, e.target);
-    if (isDirectMp4) {
-        const streamBtn = document.getElementById('btnStream');
-        if (streamBtn) streamBtn.onclick = () => playVideo(url);
+    
+    // Stream button for non-Akwam direct links
+    const streamBtn = document.getElementById('btnStream');
+    if (streamBtn) streamBtn.onclick = () => playVideo(url, linkId);
+    
+    // Open Akwam download page — calls fresh-url to get the download
+    // page URL directly, skipping the go.akwam.com.co link shortener
+    const akwamBtn = document.getElementById('btnOpenAkwam');
+    if (akwamBtn && linkId) {
+        akwamBtn.onclick = async () => {
+            akwamBtn.disabled = true;
+            akwamBtn.innerHTML = '<div class="spinner" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:0.3rem;border-width:2px;"></div> Opening...';
+            try {
+                const res = await fetch(`/api/akwam/fresh-url?link_id=${encodeURIComponent(linkId)}`);
+                const data = await res.json();
+                if (data.download_page) {
+                    window.open(data.download_page, '_blank');
+                } else {
+                    window.open('https://' + linkId, '_blank');
+                }
+            } catch (e) {
+                window.open('https://' + linkId, '_blank');
+            }
+            akwamBtn.disabled = false;
+            akwamBtn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.3rem;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                Watch on Akwam (Opens Download Page)`;
+        };
     }
 }
 
-function playVideo(url) {
-    state.modalHistory.push(() => renderFinalUrlScreen(url));
+function playVideo(url, linkId) {
+    state.modalHistory.push(() => renderFinalUrlScreen(url, linkId));
     openModal('Playing Video', state.modalHistory.length > 0, true);
     dom.modalList.innerHTML = `
         <div style="padding:1rem;width:100%;display:flex;flex-direction:column;background:#000;border-radius:var(--radius);overflow:hidden;">
@@ -431,6 +477,7 @@ function playVideo(url) {
             </video>
         </div>`;
 }
+
 
 async function handleBulkResolve(episodesToResolve) {
     if (!episodesToResolve || episodesToResolve.length === 0) return;

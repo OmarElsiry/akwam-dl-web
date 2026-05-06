@@ -1,63 +1,57 @@
-import sys, re, requests
-sys.stdout.reconfigure(encoding='utf-8')
+import requests, re
 
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
-}
+session = requests.Session()
+session.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+})
 
-def extract_with_session(ep_num, ep_url, link_id, dl_page):
-    session = requests.Session()
-    session.headers.update(HEADERS)
+# Step 1: Visit the download page (this sets cookies and generates a fresh token)
+dl_page_url = 'https://akwam.com.co/download/143994/78408/bloodhounds-%D8%A7%D9%84%D9%85%D9%88%D8%B3%D9%85-%D8%A7%D9%84%D8%A7%D9%88%D9%84/%D8%A7%D9%84%D8%AD%D9%84%D9%82%D8%A9-3'
+r1 = session.get(dl_page_url, timeout=15)
+print('Step 1 - Download page status:', r1.status_code)
+print('Cookies:', dict(session.cookies))
+
+# Extract the fresh mp4 URL
+mp4s = re.findall(r'href=["\']([^"\']+\.mp4)["\']', r1.text)
+print('MP4 URLs from page:', mp4s)
+
+if mp4s:
+    fresh_url = mp4s[0]
+    print('\nStep 2 - Trying fresh URL with same session cookies...')
     
-    print(f"\n--- Episode {ep_num} ---")
-    
-    # 1. Visit Episode Page
-    try:
-        print(f"Visiting episode page: {ep_url}")
-        r1 = session.get(ep_url, timeout=10)
-    except Exception as e:
-        print(f"Failed ep page: {e}")
-        
-    # 2. Visit Link Page
-    link_url = f"https://go.akwam.com.co/link/{link_id}"
-    try:
-        print(f"Visiting link page: {link_url}")
-        session.headers.update({'Referer': ep_url})
-        r2 = session.get(link_url, timeout=10)
-    except Exception as e:
-        print(f"Failed link page: {e}")
-        
-    # 3. Visit Download Page
-    try:
-        print(f"Visiting dl page: {dl_page}")
-        session.headers.update({'Referer': link_url})
-        r3 = session.get(dl_page, timeout=10)
-        
-        # Check for URL in HTML
-        RGX_DOWNLOAD_HREF = re.compile(
-            r"""\$\s*\(\s*['"]a\.download['"]\s*\)\s*\.attr\s*\(\s*['"]href['"]\s*,\s*['"]([^'"]+)['"]\s*\)""",
-            re.IGNORECASE
-        )
-        m = RGX_DOWNLOAD_HREF.search(r3.text)
-        if m:
-            print(f"  [OK] Found direct link: {m.group(1)}")
-        else:
-            print(f"  [NO MATCH] No link found in HTML.")
-            # Check if there is an error message
-            if "not found" in r3.text.lower() or "404" in r3.text:
-                print("  [ERROR] Page shows not found / 404.")
-    except Exception as e:
-        print(f"Failed dl page: {e}")
+    # Try with same session (cookies preserved)
+    r2 = session.get(fresh_url, stream=True, timeout=15)
+    print(f'Status: {r2.status_code}, CT: {r2.headers.get("content-type")}, CL: {r2.headers.get("content-length")}')
+    r2.close()
 
-extract_with_session(6, 
-    "https://akwam.com.co/episode/78411/bloodhounds-%D8%A7%D9%84%D9%85%D9%88%D8%B3%D9%85-%D8%A7%D9%84%D8%A7%D9%88%D9%84/%D8%A7%D9%84%D8%AD%D9%84%D9%82%D8%A9-6",
-    143997,
-    "https://akwam.com.co/download/143997/78411/bloodhounds-%D8%A7%D9%84%D9%85%D9%88%D8%B3%D9%85-%D8%A7%D9%84%D8%A7%D9%88%D9%84/%D8%A7%D9%84%D8%AD%D9%84%D9%82%D8%A9-6")
-    
-extract_with_session(8, 
-    "https://akwam.com.co/episode/78413/bloodhounds-%D8%A7%D9%84%D9%85%D9%88%D8%B3%D9%85-%D8%A7%D9%84%D8%A7%D9%88%D9%84/%D8%A7%D9%84%D8%AD%D9%84%D9%82%D8%A9-8",
-    143999,
-    "https://akwam.com.co/download/143999/78413/bloodhounds-%D8%A7%D9%84%D9%85%D9%88%D8%B3%D9%85-%D8%A7%D9%84%D8%A7%D9%88%D9%84/%D8%A7%D9%84%D8%AD%D9%84%D9%82%D8%A9-8")
+    # Try also setting Referer to the download page
+    print('\nStep 3 - Same session + Referer to download page...')
+    r3 = session.get(fresh_url, stream=True, timeout=15, headers={
+        'Referer': dl_page_url,
+    })
+    print(f'Status: {r3.status_code}, CT: {r3.headers.get("content-type")}, CL: {r3.headers.get("content-length")}')
+    r3.close()
 
+# Also look for any other download mechanism in the page
+# Maybe there's an AJAX endpoint or form submission
+print('\n--- Looking for AJAX/form patterns ---')
+ajax = re.findall(r'(?:fetch|XMLHttpRequest|axios|ajax)\s*\(?\s*["\']([^"\']+)', r1.text)
+print('AJAX calls:', ajax[:5])
+
+forms = re.findall(r'<form[^>]*action=["\']([^"\']+)["\']', r1.text)
+print('Form actions:', forms[:5])
+
+# Look for the download button mechanism
+download_btns = re.findall(r'id=["\']download["\'][^>]*', r1.text)
+print('Download buttons:', download_btns[:3])
+
+# Check for any JS countdown/timer mechanism
+timers = re.findall(r'(?:setTimeout|setInterval|countdown|timer)\s*\([^)]*\)', r1.text)
+print('Timer JS:', timers[:3])
+
+# Look at script tags
+scripts = re.findall(r'<script[^>]*>(.*?)</script>', r1.text, re.DOTALL)
+for i, s in enumerate(scripts):
+    if 'download' in s.lower() or 'mp4' in s.lower() or 'redirect' in s.lower():
+        print(f'\n--- Script {i} (relevant) ---')
+        print(s[:500])

@@ -114,6 +114,94 @@ class AkwamAPI:
                 servers.append(u)
         return servers
 
+    def get_fresh_stream_url(self, link_id_url):
+        """
+        Visits the Akwam /download/ page server-side to extract a fresh,
+        token-bound .mp4 URL.  Returns (session, mp4_url, download_page_url)
+        or (None, None, None) on failure.
+
+        The CDN tokens embedded in the mp4 URL are ephemeral and tied to the
+        IP + cookies from the session that requested the download page, so the
+        same requests.Session must be reused to fetch the actual video file.
+        """
+        import requests as _req
+
+        url = HTTP + link_id_url
+        session = _req.Session()
+        session.headers.update(HEADERS)
+
+        # Step 1: hit /link/ page to get /download/ URLs
+        try:
+            r1 = session.get(url, timeout=30)
+            html1 = r1.content.decode('utf-8', errors='replace')
+        except Exception:
+            return None, None, None
+
+        raw = re.findall(r'href="(https?://[^"]+/download/[^"]+)"', html1)
+        seen, dl_links = set(), []
+        for u in raw:
+            if u not in seen:
+                seen.add(u)
+                dl_links.append(u)
+
+        if not dl_links:
+            return None, None, None
+
+        # Step 2: visit the first /download/ page — this generates a fresh token
+        for dl_url in dl_links:
+            try:
+                r2 = session.get(dl_url, timeout=30)
+                html2 = r2.content.decode('utf-8', errors='replace')
+
+                # The page injects the mp4 link via JS setTimeout after 2.2s,
+                # but the URL is already present in the raw HTML source.
+                mp4 = re.findall(r'href=["\']([^"\']+\.mp4)["\']', html2)
+                if mp4:
+                    return session, mp4[0], dl_url
+
+                mkv = re.findall(r'href=["\']([^"\']+\.mkv)["\']', html2)
+                if mkv:
+                    return session, mkv[0], dl_url
+            except Exception:
+                continue
+
+        return None, None, None
+
+    def stream_video(self, link_id_url, range_header=None):
+        """
+        Resolve a fresh CDN token and open a streaming response using the
+        same requests.Session (preserving cookies).
+
+        Returns (response, content_info) where content_info is a dict with
+        status_code, content_type, content_length, content_range, accept_ranges.
+        The caller must iterate response and close it when done.
+
+        Returns (None, None) on failure.
+        """
+        session, mp4_url, dl_page = self.get_fresh_stream_url(link_id_url)
+        if not mp4_url:
+            return None, None
+
+        headers = {
+            'Referer': dl_page,
+            'Accept': '*/*',
+        }
+        if range_header:
+            headers['Range'] = range_header
+
+        try:
+            resp = session.get(mp4_url, headers=headers, stream=True, timeout=(15, 300))
+            info = {
+                'status_code': resp.status_code,
+                'content_type': resp.headers.get('content-type', 'video/mp4'),
+                'content_length': resp.headers.get('content-length'),
+                'content_range': resp.headers.get('content-range'),
+                'accept_ranges': resp.headers.get('accept-ranges', 'bytes'),
+            }
+            return resp, info
+        except Exception:
+            return None, None
+
     def resolve_direct_url(self, link_id_url):
         """
         Attempts to resolve a direct file URL from an akwam link_id.
