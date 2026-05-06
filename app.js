@@ -381,11 +381,9 @@ async function resolveFinalUrl(link_id) {
 function renderFinalUrlScreen(url, linkId) {
     openModal('Direct Link', state.modalHistory.length > 0);
     const isDirectMp4 = url.includes('.mp4') || url.includes('.mkv');
-    const isAkwamCdn = url.includes('downet.net') || url.includes('akwam');
     
     let actionBtns = '';
-    if (isDirectMp4 && !isAkwamCdn) {
-        // Non-Akwam direct links — can stream natively
+    if (isDirectMp4) {
         actionBtns = `
             <a href="${url}" class="btn-primary" style="text-align:center;text-decoration:none;" target="_blank">
                 DOWNLOAD VIA BROWSER
@@ -395,23 +393,7 @@ function renderFinalUrlScreen(url, linkId) {
                 Stream Online
             </button>
         `;
-    } else if (isDirectMp4 && isAkwamCdn) {
-        // Akwam CDN links — CDN requires JS execution on download page
-        // Resolve the download page URL from link_id for the user
-        actionBtns = `
-            <a href="${url}" class="btn-primary" style="text-align:center;text-decoration:none;opacity:0.5;pointer-events:none;" target="_blank">
-                DIRECT LINK (CDN Protected)
-            </a>
-            <button class="btn-secondary" style="border-color:#22d3ee;color:#22d3ee;padding:0.85rem;" id="btnOpenAkwam">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.3rem;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                Watch on Akwam (Opens Download Page)
-            </button>
-            <p style="color:var(--text-secondary);font-size:0.8rem;text-align:center;margin-top:0.25rem;">
-                ⏳ Wait ~3 seconds on the page, then click the green Download button.
-            </p>
-        `;
     } else {
-        // Non-direct link (download page URL)
         actionBtns = `
             <a href="${url}" class="btn-primary" style="text-align:center;text-decoration:none;" target="_blank">
                 OPEN DOWNLOAD PAGE
@@ -435,48 +417,61 @@ function renderFinalUrlScreen(url, linkId) {
         </div>`;
     
     document.getElementById('btnCopySingle').onclick = e => copyLinkToClipboard(url, e.target);
-    
-    // Stream button for non-Akwam direct links
     const streamBtn = document.getElementById('btnStream');
     if (streamBtn) streamBtn.onclick = () => playVideo(url, linkId);
-    
-    // Open Akwam download page — calls fresh-url to get the download
-    // page URL directly, skipping the go.akwam.com.co link shortener
-    const akwamBtn = document.getElementById('btnOpenAkwam');
-    if (akwamBtn && linkId) {
-        akwamBtn.onclick = async () => {
-            akwamBtn.disabled = true;
-            akwamBtn.innerHTML = '<div class="spinner" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:0.3rem;border-width:2px;"></div> Opening...';
-            try {
-                const res = await fetch(`/api/akwam/fresh-url?link_id=${encodeURIComponent(linkId)}`);
-                const data = await res.json();
-                if (data.download_page) {
-                    window.open(data.download_page, '_blank');
-                } else {
-                    window.open('https://' + linkId, '_blank');
-                }
-            } catch (e) {
-                window.open('https://' + linkId, '_blank');
-            }
-            akwamBtn.disabled = false;
-            akwamBtn.innerHTML = `
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.3rem;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                Watch on Akwam (Opens Download Page)`;
-        };
-    }
 }
 
 function playVideo(url, linkId) {
     state.modalHistory.push(() => renderFinalUrlScreen(url, linkId));
     openModal('Playing Video', state.modalHistory.length > 0, true);
-    dom.modalList.innerHTML = `
-        <div style="padding:1rem;width:100%;display:flex;flex-direction:column;background:#000;border-radius:var(--radius);overflow:hidden;">
-            <video controls autoplay playsinline style="width:100%;height:auto;outline:none;background:#000;border-radius:var(--radius);object-fit:contain;">
-                <source src="${url}" type="video/mp4">
-                Your browser does not support HTML5 video.
-            </video>
-        </div>`;
+
+    const isAkwamCdn = url.includes('downet.net') || url.includes('akwam');
+
+    // For Akwam CDN links, stream through our Playwright-powered proxy
+    // which handles the JavaScript-based CDN protection automatically
+    let videoSrc = url;
+    if (isAkwamCdn && linkId) {
+        videoSrc = `/api/akwam-stream?link_id=${encodeURIComponent(linkId)}`;
+
+        // Show loading state while Playwright resolves the CDN token
+        dom.modalList.innerHTML = `
+            <div style="text-align:center;padding:3rem;">
+                <div class="spinner" style="margin:0 auto 1.5rem;width:36px;height:36px;"></div>
+                <p style="color:var(--text-secondary);margin-bottom:0.5rem;">Bypassing CDN protection...</p>
+                <p style="color:var(--text-muted);font-size:0.8rem;">This uses a headless browser to activate the download token. Takes ~8 seconds.</p>
+            </div>`;
+    }
+
+    // Use a small delay for Akwam to give the UI feedback before blocking on load
+    const delay = isAkwamCdn ? 100 : 0;
+    setTimeout(() => {
+        dom.modalList.innerHTML = `
+            <div style="padding:1rem;width:100%;display:flex;flex-direction:column;background:#000;border-radius:var(--radius);overflow:hidden;">
+                <video id="akwamVideo" controls autoplay playsinline referrerpolicy="no-referrer" crossorigin="anonymous" style="width:100%;max-height:70vh;outline:none;background:#000;border-radius:var(--radius);object-fit:contain;">
+                    <source src="${videoSrc}" type="video/mp4">
+                    Your browser does not support HTML5 video.
+                </video>
+                ${isAkwamCdn ? '<p id="streamStatus" style="color:var(--text-secondary);font-size:0.8rem;text-align:center;padding:0.5rem;">Loading stream directly from CDN...</p>' : ''}
+            </div>`;
+
+        if (isAkwamCdn) {
+            const video = document.getElementById('akwamVideo');
+            const status = document.getElementById('streamStatus');
+            if (video) {
+                video.addEventListener('loadstart', () => { if (status) status.textContent = 'Connecting to stream...'; });
+                video.addEventListener('progress', () => { if (status) status.textContent = 'Buffering...'; });
+                video.addEventListener('canplay', () => { if (status) status.textContent = ''; });
+                video.addEventListener('error', () => {
+                    if (status) {
+                        status.style.color = '#f87171';
+                        status.textContent = 'Stream failed. The CDN may be blocking this content. Try again or use Download via Browser.';
+                    }
+                });
+            }
+        }
+    }, delay);
 }
+
 
 
 async function handleBulkResolve(episodesToResolve) {

@@ -88,34 +88,148 @@ async def resolve(req: LinkRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ------------------------------------------------------------------ #
-#  Akwam fresh-URL resolver
-#  Returns a freshly resolved CDN URL for direct browser playback.
-#  The CDN tokens expire quickly, so we resolve on-demand right when
-#  the user clicks "Stream Online" rather than reusing a stale URL.
+#  Akwam Playwright stream proxy
+#  Uses a headless Chromium browser to navigate the Akwam download
+#  page, execute the JS countdown that activates the CDN token, then
+#  stream the actual video file back to the client.
 # ------------------------------------------------------------------ #
 
-@app.get("/api/akwam/fresh-url")
-async def akwam_fresh_url(link_id: str):
-    """Resolve a fresh mp4 URL from Akwam's download page.
+import threading
+_pw_lock = threading.Lock()
 
-    CDN tokens are short-lived — this endpoint should be called right
-    before playback so the browser gets a fresh, valid URL.
+def _playwright_get_video_url(link_id_url: str):
+    """
+    Use Playwright headless browser to:
+      1. Navigate the /link/ page → get download page URLs
+      2. Navigate the download page → let JS execute (2.2s countdown)
+      3. Extract the activated download URL
+      4. Return (download_url, cookies, headers) for streaming
+    """
+    from playwright.sync_api import sync_playwright
+    import re as _re
+
+    url = 'https://' + link_id_url
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                       'AppleWebKit/537.36 (KHTML, like Gecko) '
+                       'Chrome/120.0.0.0 Safari/537.36',
+        )
+        page = context.new_page()
+
+        try:
+            # Step 1: Visit /link/ page to get download page URLs
+            page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            html1 = page.content()
+
+            dl_links = list(dict.fromkeys(
+                _re.findall(r'href="(https?://[^"]+/download/[^"]+)"', html1)
+            ))
+            if not dl_links:
+                browser.close()
+                return None, None, None
+
+            # Step 2: Navigate to the first download page
+            download_url = dl_links[0]
+            page.goto(download_url, wait_until='domcontentloaded', timeout=30000)
+
+            # Step 3: Wait for the countdown (2.2s) + buffer
+            page.wait_for_timeout(8000)
+
+            # Step 4: Get the activated download href
+            html2 = page.content()
+            mp4_matches = _re.findall(r'href=["\']([^"\']+\.mp4)["\']', html2)
+            if not mp4_matches:
+                mp4_matches = _re.findall(r'href=["\']([^"\']+\.mkv)["\']', html2)
+
+            if not mp4_matches:
+                browser.close()
+                return None, None, None
+
+            mp4_url = mp4_matches[0]
+
+            # Step 5: Get all cookies from the browser context
+            cookies = context.cookies()
+            cookie_str = '; '.join(f"{c['name']}={c['value']}" for c in cookies)
+
+            browser.close()
+            return mp4_url, download_url, cookie_str
+
+        except Exception as e:
+            browser.close()
+            return None, None, str(e)
+
+
+def _playwright_stream_video(link_id_url: str, range_header: str = None):
+    """
+    Full Playwright flow: resolve the URL with browser JS, then download
+    the video using the browser's cookies in a requests session.
+    Returns (response, info_dict) or (None, None).
+    """
+    import requests as _req
+
+    mp4_url, referer_url, cookie_str = _playwright_get_video_url(link_id_url)
+    if not mp4_url:
+        return None, None
+
+    # Use requests with the exact cookies from the browser session
+    session = _req.Session()
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                       'AppleWebKit/537.36 (KHTML, like Gecko) '
+                       'Chrome/120.0.0.0 Safari/537.36',
+        'Referer': referer_url,
+        'Accept': '*/*',
+        'Cookie': cookie_str,
+    }
+    if range_header:
+        headers['Range'] = range_header
+
+    try:
+        resp = session.get(mp4_url, headers=headers, stream=True, timeout=(15, 300))
+        info = {
+            'status_code': resp.status_code,
+            'content_type': resp.headers.get('content-type', 'video/mp4'),
+            'content_length': resp.headers.get('content-length'),
+            'content_range': resp.headers.get('content-range'),
+            'accept_ranges': resp.headers.get('accept-ranges', 'bytes'),
+        }
+        return resp, info
+    except Exception:
+        return None, None
+
+
+from fastapi.responses import RedirectResponse
+
+@app.get("/api/akwam-stream")
+async def akwam_stream(link_id: str, request: Request):
+    """Stream Akwam video.
+
+    We cannot proxy the stream because s301d5.downet.net blocks Datacenter IPs
+    from fetching the actual video data. Instead, we use Playwright to resolve
+    the token, and then redirect the client to the direct MP4 link so they
+    download/stream it from their own residential IP.
     """
     if not link_id:
         raise HTTPException(status_code=400, detail="Missing 'link_id'")
 
     loop = asyncio.get_event_loop()
-
-    session, mp4_url, dl_page = await loop.run_in_executor(
-        None, akwam.get_fresh_stream_url, link_id
+    # Use the playwright url fetcher directly instead of the proxy wrapper
+    mp4_url, referer, cookie = await loop.run_in_executor(
+        None, _playwright_get_video_url, f"go.akwam.com.co/link/{link_id}"
     )
+
     if not mp4_url:
         raise HTTPException(
             status_code=502,
-            detail="Could not resolve a fresh URL from Akwam"
+            detail="Could not resolve a streamable URL from Akwam"
         )
 
-    return {"url": mp4_url, "download_page": dl_page}
+    # Redirect the user's browser directly to the CDN.
+    return RedirectResponse(url=mp4_url)
+
 
 class BulkResolveRequest(BaseModel):
     urls: List[Dict[str, str]] # List of {name: "...", url: "..."}

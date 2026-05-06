@@ -14,30 +14,18 @@ with sync_playwright() as p:
     page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
     def handle_response(response):
-        if ".mp4" in response.url or ".mkv" in response.url:
+        if (".mp4" in response.url or ".mkv" in response.url):
             print("<-", response.status, response.url)
 
     context.on("response", handle_response)
 
     try:
         print("Going to URL...")
+        # Don't wait for domcontentloaded, just commit
         page.goto(url, wait_until='commit', timeout=60000)
         
-        # We need to wait for the page to load
-        time.sleep(2)
-        
-        # Click the overlay to remove it
-        print("Clicking overlay...")
-        try:
-            with context.expect_page(timeout=5000) as new_page_info:
-                page.mouse.click(10, 10)
-            ad_page = new_page_info.value
-            ad_page.close()
-            print("Ad closed.")
-        except Exception as e:
-            print("No ad popup:", str(e).encode('ascii', 'ignore').decode('ascii'))
-            
-        time.sleep(1)
+        print("Waiting for network idle...")
+        page.wait_for_load_state('networkidle', timeout=15000)
         
         print("Extracting download link...")
         dl_link = page.locator('a[href*="/download/"]').first.get_attribute('href')
@@ -45,20 +33,7 @@ with sync_playwright() as p:
         
         print("Going to download page...")
         page.goto(dl_link, wait_until='commit')
-        time.sleep(2)
-        
-        # Click the second overlay
-        print("Clicking second overlay...")
-        try:
-            with context.expect_page(timeout=5000) as new_page_info2:
-                page.mouse.click(10, 10)
-            ad_page2 = new_page_info2.value
-            ad_page2.close()
-            print("Second ad closed.")
-        except Exception as e:
-            print("No second ad popup:", str(e).encode('ascii', 'ignore').decode('ascii'))
-            
-        time.sleep(3) # Wait for countdown
+        page.wait_for_load_state('networkidle', timeout=15000)
         
         print("Extracting MP4 link...")
         mp4_link = page.locator('a[href*=".mp4"]').first.get_attribute('href')
@@ -68,6 +43,11 @@ with sync_playwright() as p:
         r = page.request.get(mp4_link, headers={"Referer": dl_link})
         print("Response status:", r.status)
         
+        if r.status == 200:
+            print("SUCCESS! Playwright request context works!")
+        else:
+            print("FAILED! Even Playwright request context got 403!")
+            
     except Exception as e:
         print("Exception:", str(e).encode('ascii', 'ignore').decode('ascii'), file=sys.stderr)
         
