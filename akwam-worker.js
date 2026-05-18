@@ -44,12 +44,14 @@ const AkwamWorker = (() => {
                     signal: AbortSignal.timeout(25000),
                 });
                 if (!resp.ok) {
-                    lastError = new Error(`HTTP ${resp.status} from proxy`);
+                    lastError = new Error(`HTTP ${resp.status} from proxy ${proxiedUrl}`);
+                    console.error("[CORS Proxy Failed]", lastError.message);
                     continue;
                 }
                 return await resp.text();
             } catch (err) {
                 lastError = err;
+                console.error("[CORS Proxy Fetch Error]", proxiedUrl, err.message);
                 continue;
             }
         }
@@ -145,31 +147,66 @@ const AkwamWorker = (() => {
         const html = await corsFetch(contentUrl);
         const singleLine = html.replace(/\n/g, '');
 
-        // Extract quality link_ids
-        const qualityPattern = /data-quality="\d+".*?href="https?:\/\/([^"]+\/link\/\d+)"/g;
-        const qualityMatches = [...singleLine.matchAll(qualityPattern)];
+        // 1. Try to find all download links (matching /link/\d+)
+        // This is highly robust and catches both structures!
+        const linkPattern = /href="https?:\/\/([^"]+\/link\/\d+)"/g;
+        const linkMatches = [...singleLine.matchAll(linkPattern)];
         const uniqueLinks = [];
-        for (const m of qualityMatches) {
+        for (const m of linkMatches) {
             if (!uniqueLinks.includes(m[1])) uniqueLinks.push(m[1]);
         }
 
-        // Extract sizes
+        // Check for relative links
+        if (uniqueLinks.length === 0) {
+            const relLinkPattern = /href="\/link\/(\d+)"/g;
+            const relMatches = [...singleLine.matchAll(relLinkPattern)];
+            const base = await resolveBaseUrl();
+            const hostname = new URL(base).hostname;
+            for (const m of relMatches) {
+                const fullLink = `go.${hostname}/link/${m[1]}`;
+                if (!uniqueLinks.includes(fullLink)) uniqueLinks.push(fullLink);
+            }
+        }
+
+        // 2. Extract sizes
         const sizePattern = /font-size-14 mr-auto">([0-9.MGB ]+)<\//g;
         const sizeMatches = [...singleLine.matchAll(sizePattern)];
 
-        // Match quality labels to links
-        const qLabels = ['1080p', '720p', '480p', '360p', '240p'];
         const qualities = [];
-        let idx = 0;
-        for (const q of qLabels) {
-            if (html.includes(`>${q}</`) && idx < uniqueLinks.length) {
-                const size = idx < sizeMatches.length ? sizeMatches[idx][1] : 'Unknown';
-                qualities.push({
-                    quality: q,
-                    link_id: uniqueLinks[idx],
-                    size: size
-                });
-                idx++;
+
+        // 3. Match qualities
+        if (uniqueLinks.length > 0) {
+            // First, try standard quality matching
+            const qLabels = ['1080p', '720p', '480p', '360p', '240p'];
+            let idx = 0;
+            for (const q of qLabels) {
+                if (html.includes(`>${q}</`) && idx < uniqueLinks.length) {
+                    const size = idx < sizeMatches.length ? sizeMatches[idx][1] : 'Unknown';
+                    qualities.push({
+                        quality: q,
+                        link_id: uniqueLinks[idx],
+                        size: size
+                    });
+                    idx++;
+                }
+            }
+
+            // Fallback for pages with a single link or without standard data-quality/quality labels
+            if (qualities.length === 0) {
+                let metaQuality = '720p'; // default fallback
+                const metaMatch = html.match(/الجودة\s*:\s*[^<]*?(\d+p)/i);
+                if (metaMatch) {
+                    metaQuality = metaMatch[1];
+                }
+
+                for (let i = 0; i < uniqueLinks.length; i++) {
+                    const size = i < sizeMatches.length ? sizeMatches[i][1] : 'Unknown';
+                    qualities.push({
+                        quality: i === 0 ? metaQuality : `${metaQuality} (${i+1})`,
+                        link_id: uniqueLinks[i],
+                        size: size
+                    });
+                }
             }
         }
         return qualities;
