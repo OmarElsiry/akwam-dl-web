@@ -3,3 +3,5 @@ requests
 pydantic
 uvicorn
 firecrawl-py
+yt-dlp
+httpx
