@@ -27,28 +27,47 @@ const AkwamWorker = (() => {
         (url) => `/api/cors-proxy?url=${encodeURIComponent(url)}`,
     ];
 
+    let workingProxyIndex = 0; // Cache the index of the first working proxy to avoid sequential fail-overs on every request!
+
     /**
      * Fetch a URL through the CORS proxy chain.
-     * Tries each proxy in order until one succeeds.
+     * Tries the last known working proxy first. If it fails, falls back.
      * Returns the raw HTML text.
      */
     async function corsFetch(url) {
         let lastError = null;
-        for (const proxyFn of CORS_PROXIES) {
+
+        // Re-order proxy indices so that the working proxy is tried first
+        const indices = [];
+        indices.push(workingProxyIndex);
+        for (let i = 0; i < CORS_PROXIES.length; i++) {
+            if (i !== workingProxyIndex) {
+                indices.push(i);
+            }
+        }
+
+        for (const idx of indices) {
+            const proxyFn = CORS_PROXIES[idx];
             const proxiedUrl = proxyFn(url);
             try {
                 const resp = await fetch(proxiedUrl, {
                     headers: {
                         'Accept': 'text/html,application/xhtml+xml,*/*',
                     },
-                    signal: AbortSignal.timeout(25000),
+                    signal: AbortSignal.timeout(8000), // Fast 8s timeout to fail over quickly
                 });
                 if (!resp.ok) {
                     lastError = new Error(`HTTP ${resp.status} from proxy ${proxiedUrl}`);
                     console.error("[CORS Proxy Failed]", lastError.message);
                     continue;
                 }
-                return await resp.text();
+                const text = await resp.text();
+                // Success! Save this working index
+                if (workingProxyIndex !== idx) {
+                    console.log(`[AkwamWorker] Switched working CORS proxy to index ${idx}`);
+                    workingProxyIndex = idx;
+                }
+                return text;
             } catch (err) {
                 lastError = err;
                 console.error("[CORS Proxy Fetch Error]", proxiedUrl, err.message);
