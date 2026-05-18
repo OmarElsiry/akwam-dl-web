@@ -571,3 +571,183 @@ button.btn-primary:active { transform: translateY(0); }
 /* ============================================================
    Heartbeat animation -> Replaced with VoltAgent Glow 
    ============================================================ */
+
+/* ============================================================
+   Responsive Episodes Grid (2 columns Desktop, 3 Large, 4 TV)
+   ============================================================ */
+.episodes-grid {
+  display: grid;
+  grid-template-columns: 1fr; /* 1 column on mobile */
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+/* Tablets and small desktops (2 columns) */
+@media (min-width: 768px) {
+  .episodes-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Larger screens (3 columns) */
+@media (min-width: 1200px) {
+  .episodes-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .modal-wide {
+    max-width: min(1080px, 96vw) !important;
+  }
+}
+
+/* ============================================================
+   TV & Ultra-Large Screen Optimizations (min-width: 1920px)
+   ============================================================ */
+@media (min-width: 1920px) {
+  .episodes-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+  }
+
+  /* Increase container layout */
+  .container {
+    max-width: 1720px;
+    padding: 3rem 4rem;
+  }
+
+  /* Scale up base fonts and spacings for TV readability */
+  body {
+    font-size: 1.25rem;
+  }
+
+  header {
+    margin-bottom: 4rem;
+    padding-bottom: 2rem;
+  }
+  h1 {
+    font-size: 2.25rem;
+  }
+  .brand-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: var(--radius-lg);
+  }
+  .brand-icon svg {
+    width: 32px !important;
+    height: 32px !important;
+  }
+  .btn-icon {
+    padding: 0.85rem;
+    border-radius: var(--radius-lg);
+  }
+  .btn-icon svg {
+    width: 28px !important;
+    height: 28px !important;
+  }
+
+  /* Search Card & Controls */
+  .search-card {
+    padding: 2.5rem;
+    border-radius: 12px;
+    margin-bottom: 3.5rem;
+  }
+  .provider-label, .search-switch {
+    font-size: 1.15rem;
+  }
+  .provider-opt, .switch-opt {
+    font-size: 1.15rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+  }
+  input[type="text"] {
+    font-size: 1.35rem;
+    padding: 1.15rem 1.5rem;
+    border-radius: var(--radius-lg);
+  }
+  button.btn-primary {
+    font-size: 1.35rem;
+    padding: 18px 24px;
+    border-radius: var(--radius-lg);
+  }
+
+  /* Results Grid & Cards */
+  .results-grid {
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 2rem;
+  }
+  .result-item {
+    padding: 1.75rem;
+    border-radius: 12px;
+  }
+  .result-item h3 {
+    font-size: 1.65rem;
+    margin-bottom: 0.75rem;
+  }
+  .result-item.has-thumb {
+    gap: 1.25rem;
+    padding: 1.25rem;
+  }
+  .result-thumb {
+    width: 90px;
+    height: 126px;
+    border-radius: 6px;
+  }
+  .type-badge, .source-badge {
+    font-size: 1rem;
+    padding: 0.25rem 0.85rem;
+  }
+
+  /* Modal Scaling for TV */
+  .modal-wide {
+    max-width: min(1500px, 96vw) !important;
+  }
+  .modal {
+    max-width: 800px;
+    border-radius: 12px;
+  }
+  .modal-header {
+    padding: 1.75rem 2.25rem;
+  }
+  .modal-title {
+    font-size: 2rem;
+  }
+  .close-modal {
+    font-size: 1.35rem;
+    padding: 0.5rem 0.85rem;
+    border-radius: 8px;
+  }
+  .modal-body {
+    padding: 1.75rem 2.25rem;
+  }
+
+  /* List Items & Episodes */
+  .list-item {
+    padding: 1.25rem 1.5rem;
+    font-size: 1.25rem;
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+  }
+  .quality-tag {
+    font-size: 1.1rem;
+  }
+  .size-tag {
+    font-size: 1.1rem;
+  }
+
+  /* Buttons & Utilities */
+  .btn-secondary {
+    padding: 18px 24px;
+    font-size: 1.25rem;
+    border-radius: 8px;
+  }
+  .btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 1.1rem;
+  }
+  
+  /* Bulk Div */
+  #bulkStart, #bulkEnd {
+    width: 80px !important;
+    padding: 0.5rem !important;
+    font-size: 1.1rem !important;
+  }
+}

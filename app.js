@@ -338,13 +338,17 @@ async function handleAkwamClick(item, type, isBackAction = false) {
             handleBulkResolve(selected);
         };
 
+        const gridDiv = document.createElement('div');
+        gridDiv.className = 'episodes-grid';
+
         state.currentEpisodes.forEach((ep, index) => {
             const row = document.createElement('div');
-            row.className = 'list-item';
+            row.className = 'list-item episode-item';
             row.innerText = `${index + 1}. ${ep.name}`;
             row.onclick = () => { state.modalHistory.push(currentViewRenderer); handleQualitySelect(ep.url); };
-            dom.modalList.appendChild(row);
+            gridDiv.appendChild(row);
         });
+        dom.modalList.appendChild(gridDiv);
     } else {
         state.modalHistory.push(() => closeModal());
         handleQualitySelect(item.url);
