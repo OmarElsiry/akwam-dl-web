@@ -5,10 +5,10 @@ from requests import get
 IS_TERMUX = 'TERMUX_VERSION' in os.environ
 HTTP = 'https://'
 YOUR_CHOICE = '\n[+] Your Choice: '
-RGX_DL_URL = r'https?://(\w*\.*\w+\.\w+/link/\d+)'
+RGX_DL_URL = r'https?://([^"]+/link/\d+)'
 RGX_SHORTEN_URL = r'https?://(\w*\.*\w+\.\w+/download/.*?)"'
 RGX_DIRECT_URL = r'([a-z0-9]{4,}\.\w+\.\w+/download/.*?)"'
-RGX_QUALITY_TAG = rf'tab-content quality.*?a href="{RGX_DL_URL}"'
+RGX_QUALITY_TAG = r'data-quality="\d+".*?href="https?://([^"]+/link/\d+)"'
 RGX_SIZE_TAG = r'font-size-14 mr-auto">([0-9.MGB ]+)</'
 WATCH_HTML_CMD = 'data:text/html,<html><body><video controls><source src="{}" type="video/mp4"></video></body></html>'
 
@@ -41,9 +41,14 @@ class Akwam:
     def load(self):
         self.cur_page = get(self.cur_url)
         self.parse(RGX_QUALITY_TAG, no_multi_line=True)
+        unique_links = []
+        for link in self.parsed:
+            if link not in unique_links:
+                unique_links.append(link)
+        self.parsed = unique_links
         i: int = 0
         for q in ['1080p', '720p', '480p']:
-            if f'>{q}</' in self.cur_page.text:
+            if f'>{q}</' in self.cur_page.text and i < len(self.parsed):
                 self.qualities[q] = self.parsed[i]
                 i += 1
         self.parse(RGX_SIZE_TAG, no_multi_line=True)

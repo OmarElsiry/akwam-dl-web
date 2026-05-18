@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict
 from .akwam_api import AkwamAPI
 from .egydead_api import EgyDeadAPI
+from .video_resolver import VideoResolver, ResolvedVideo
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi.responses import HTMLResponse, FileResponse
@@ -26,6 +27,10 @@ async def get_css():
 async def get_js():
     return FileResponse(os.path.join(os.path.dirname(__file__), "..", "app.js"))
 
+@app.get("/akwam-worker.js")
+async def get_worker_js():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "..", "akwam-worker.js"))
+
 # Mount static files from project root
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "..")), name="static")
 
@@ -40,6 +45,7 @@ app.add_middleware(
 
 akwam = AkwamAPI()
 egydead = EgyDeadAPI()
+video_resolver = VideoResolver()
 
 # ------------------------------------------------------------------ #
 #  Shared models
@@ -47,6 +53,14 @@ egydead = EgyDeadAPI()
 
 class LinkRequest(BaseModel):
     url: str
+
+class ResolveEmbedRequest(BaseModel):
+    url: str
+    quality: Optional[str] = None  # 'best', '1080p', '720p', '480p'
+
+class DownloadRequest(BaseModel):
+    url: str
+    filename: Optional[str] = None
 
 # ------------------------------------------------------------------ #
 #  Akwam endpoints  (unchanged)
@@ -421,6 +435,92 @@ async def egydead_watch(req: LinkRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ------------------------------------------------------------------ #
+#  Video Resolver endpoint
+#  Resolves embed player URLs to direct video URLs using yt-dlp.
+# ------------------------------------------------------------------ #
+
+@app.post("/api/resolve-embed")
+async def resolve_embed(req: ResolveEmbedRequest):
+    """
+    Resolve an embed player URL to a direct video URL.
+    
+    Uses yt-dlp to extract the direct video URL from embed players
+    like uqload, doodstream, streamtape, etc.
+    
+    This bypasses the ad-heavy embed page entirely.
+    """
+    if not req.url:
+        raise HTTPException(status_code=400, detail="Missing 'url' parameter")
+
+    try:
+        result = await video_resolver.resolve(req.url)
+        if not result:
+            raise HTTPException(
+                status_code=502, 
+                detail="Could not resolve video URL from embed"
+            )
+        
+        return {
+            "url": result.url,
+            "title": result.title,
+            "ext": result.ext,
+            "quality": result.quality,
+            "filesize": result.filesize,
+            "formats": result.formats,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ------------------------------------------------------------------ #
+#  EgyDead Download endpoint
+#  Resolves embed URL and streams video directly as a file download.
+# ------------------------------------------------------------------ #
+
+@app.post("/api/egydead/download")
+async def egydead_download(req: DownloadRequest):
+    """
+    Download a video from an EgyDead embed URL.
+    
+    Resolves the embed URL and streams the video directly to the client
+    as a file download, bypassing all ads.
+    """
+    if not req.url:
+        raise HTTPException(status_code=400, detail="Missing 'url' parameter")
+
+    try:
+        # Resolve embed URL
+        resolved = await video_resolver.resolve(req.url)
+        if not resolved:
+            raise HTTPException(status_code=502, detail="Could not resolve video URL")
+
+        # Stream the video as a download
+        filename = req.filename or f"{resolved.title or 'video'}.{resolved.ext or 'mp4'}"
+        
+        async def download_generator():
+            async with httpx.AsyncClient(follow_redirects=True, timeout=120.0) as client:
+                response = await client.get(resolved.url, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Referer': req.url,
+                })
+                async for chunk in response.aiter_bytes(chunk_size=65536):
+                    yield chunk
+
+        return StreamingResponse(
+            download_generator(),
+            media_type='application/octet-stream',
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"',
+                'Access-Control-Allow-Origin': '*',
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ------------------------------------------------------------------ #
 #  Proxy Stream endpoint
 #  Downloads from the embed server and streams to the client,
 #  preventing ad redirects and enabling server-side caching.
@@ -541,6 +641,51 @@ async def proxy_image(url: str):
                 headers={
                     'Cache-Control': 'public, max-age=86400',
                     'Access-Control-Allow-Origin': '*',
+                }
+            )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+# ------------------------------------------------------------------ #
+#  CORS Proxy (dumb pipe for client-side AkwamWorker fallback)
+#  No parsing, no chaining — just forwards raw HTML to the browser.
+# ------------------------------------------------------------------ #
+
+@app.get("/api/cors-proxy")
+async def cors_proxy(url: str):
+    """Lightweight CORS proxy — forwards a URL's HTML to the browser.
+    
+    Used as a last-resort fallback when public CORS proxies
+    (corsproxy.io, allorigins.win) fail. The browser does all parsing.
+    """
+    if not url:
+        raise HTTPException(status_code=400, detail="Missing 'url' parameter")
+
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if parsed.scheme not in ('http', 'https'):
+        raise HTTPException(status_code=400, detail="Invalid URL scheme")
+    if not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Invalid URL")
+    # Block internal network access (SSRF prevention)
+    hostname = parsed.hostname.lower()
+    blocked = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '169.254']
+    if any(hostname.startswith(b) for b in blocked) or hostname.endswith('.local'):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=25.0) as client:
+            resp = await client.get(url, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            })
+            content_type = resp.headers.get('content-type', 'text/html')
+            from fastapi.responses import Response
+            return Response(
+                content=resp.content,
+                media_type=content_type,
+                headers={
+                    'Access-Control-Allow-Origin': '*',
+                    'Cache-Control': 'public, max-age=300',
                 }
             )
     except Exception as e:

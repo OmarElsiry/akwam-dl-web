@@ -7,7 +7,7 @@ RGX_DL_URL = r'https?://([\w.-]+/link/\d+)'
 RGX_SHORTEN_URL = r'https?://([\w.-]+/download/[^"]+)"'
 # Matches a direct file URL with a download attribute (legacy sites)
 RGX_DIRECT_URL = r'https?://([^"]+)"\s+download'
-RGX_QUALITY_TAG = rf'tab-content quality.*?a href="{RGX_DL_URL}"'
+RGX_QUALITY_TAG = r'data-quality="\d+".*?href="https?://([^"]+/link/\d+)"'
 RGX_SIZE_TAG = r'font-size-14 mr-auto">([0-9.MGB ]+)</'
 
 HEADERS = {
@@ -73,6 +73,12 @@ class AkwamAPI:
         
         qualities_matches = re.findall(RGX_QUALITY_TAG, page_content)
         sizes = re.findall(RGX_SIZE_TAG, page_content)
+        
+        unique_links = []
+        for link in qualities_matches:
+            if link not in unique_links:
+                unique_links.append(link)
+        qualities_matches = unique_links
         
         avail_qualities = []
         q_labels = ['1080p', '720p', '480p', '360p', '240p']

@@ -94,27 +94,28 @@ const activeOpt = Array.from(dom.switchOpts).find(o => o.classList.contains('act
 if (activeOpt) state.type = activeOpt.dataset.value;
 
 // ============================================================
-//  API helpers — Akwam
+//  API helpers — Akwam  (CLIENT-SIDE via AkwamWorker)
+//  All fetching runs in the user's browser, not the server.
 // ============================================================
 async function apiSearch(query, type) {
-    const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&type=${type}`);
-    return res.json();
+    const results = await AkwamWorker.search(query, type);
+    return { results };
 }
 async function apiGetEpisodes(url) {
-    const res = await fetch('/api/episodes', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({url}) });
-    return res.json();
+    const episodes = await AkwamWorker.getEpisodes(url);
+    return { episodes };
 }
 async function apiGetQualities(url) {
-    const res = await fetch('/api/qualities', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({url}) });
-    return res.json();
+    const qualities = await AkwamWorker.getQualities(url);
+    return { qualities };
 }
 async function apiResolve(url) {
-    const res = await fetch('/api/resolve', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({url}) });
-    return res.json();
+    const resolvedUrl = await AkwamWorker.resolveDirectUrl(url);
+    return { url: resolvedUrl };
 }
 async function apiBulkResolve(urls) {
-    const res = await fetch('/api/bulk-resolve', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({urls}) });
-    return res.json();
+    const results = await AkwamWorker.bulkResolve(urls);
+    return { results };
 }
 
 // ============================================================
@@ -439,8 +440,8 @@ function playVideo(url, linkId) {
                 <p style="color:var(--text-muted);font-size:0.8rem;">Resolving the direct download link. Takes ~3 seconds.</p>
             </div>`;
 
-        fetch(`/api/akwam-resolve-stream?link_id=${encodeURIComponent(linkId)}`)
-            .then(r => r.json())
+        AkwamWorker.resolveStream(linkId)
+            .then(data => data)
             .then(data => {
                 if (data.url) {
                     const mp4Url = data.url;
