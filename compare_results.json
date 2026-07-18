@@ -1,0 +1,38 @@
+[
+  {
+    "series": "اللعبة",
+    "error": "No 'url' in resolve response",
+    "resolve_data": {
+      "detail": [
+        {
+          "type": "string_type",
+          "loc": [
+            "body",
+            "url"
+          ],
+          "msg": "Input should be a valid string",
+          "input": null
+        }
+      ]
+    },
+    "q_link": null
+  },
+  {
+    "series": "bloodhounds",
+    "error": "No 'url' in resolve response",
+    "resolve_data": {
+      "detail": [
+        {
+          "type": "string_type",
+          "loc": [
+            "body",
+            "url"
+          ],
+          "msg": "Input should be a valid string",
+          "input": null
+        }
+      ]
+    },
+    "q_link": null
+  }
+]

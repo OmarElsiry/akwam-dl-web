@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.playwright-mcp/
+scratch/__pycache__/
+server_analysis.md
+test_*.py
+test_*_result.json
+test_*.log

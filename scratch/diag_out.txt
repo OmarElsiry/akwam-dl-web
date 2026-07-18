@@ -1,0 +1,14 @@
+﻿Scraping: https://tv8.egydead.live/avatar-3-fire-and-ash-2025-1080p-web-dl/
+
+HTML length: 22952 chars
+MD  length : 10536 chars
+
+=== IFRAMES (0) ===
+
+=== data-* video attrs (0) ===
+
+=== SCRIPT blocks with 'src'/'embed'/'player' (0 total) ===
+
+=== External-looking hrefs (82) ===
+
+=== Possible base64 blobs (0) ===

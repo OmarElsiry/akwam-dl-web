@@ -1,0 +1,10 @@
+fastapi
+requests
+pydantic
+uvicorn
+firecrawl-py
+yt-dlp
+httpx
+cloudscraper
+curl-cffi
+streamlink

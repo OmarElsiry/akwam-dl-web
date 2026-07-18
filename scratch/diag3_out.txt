@@ -1,0 +1,5 @@
+﻿Saved 22952 chars to scratch/page_raw.html
+
+Now trying with actions (click watch button)...
+After-click HTML: 22952 chars -> scratch/page_after_click.html
+Iframes after click: 0
