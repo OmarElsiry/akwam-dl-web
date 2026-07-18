@@ -1690,7 +1690,6 @@ async function royaldramaPlay(url, name, poster, servers = []) {
             </div>
         `;
     }
-    }
     
     dom.modalList.innerHTML = `
         <div class="watch-container">
