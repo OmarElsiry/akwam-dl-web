@@ -1599,64 +1599,102 @@ async function royaldramaShowDetail(item) {
     }
 
     // Movie (or series page without parsed episodes) → play the watch page.
-    royaldramaPlay(item.url, name, poster);
+    royaldramaPlay(item.url, name, poster, data.servers || []);
 }
 
 let royaldramaEpisodes = [];
 let royaldramaSeriesName = '';
 let royaldramaPoster = '';
 
-function royaldramaPlayEpisode(idx) {
+async function royaldramaPlayEpisode(idx) {
     const eps = royaldramaEpisodes;
     const ep = eps[idx];
     if (!ep) return;
     openModal(`${royaldramaSeriesName} — ${ep.name}`, state.modalHistory.length > 0);
+    
+    // Fetch details for the episode to get its servers
+    showModalLoading(true);
+    const data = await royaldramaDetail(ep.url);
+    showModalLoading(false);
+    
     dom.mainModal.classList.add('modal-wide');
     const prevDisabled = idx <= 0 ? 'disabled' : '';
     const nextDisabled = idx >= eps.length - 1 ? 'disabled' : '';
+    
+    const servers = data.servers || [];
+    let serverBtns = '';
+    let playerHtml = '';
+    
+    if (servers.length > 0) {
+        if (servers.length > 1) {
+            serverBtns = servers.map((s, i) =>
+                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${s.url}" onclick="royaldramaSwitchServer(this)">${s.name}</button>`
+            ).join('');
+        }
+        playerHtml = `
+            ${serverBtns ? `<div class="server-row">${serverBtns}</div>` : ''}
+            <div class="embed-frame-wrap">
+                <iframe id="royaldramaFrame" src="${servers[0].url}"
+                    frameborder="0" allowfullscreen allow="autoplay; fullscreen">
+                </iframe>
+            </div>
+        `;
+    } else {
+        playerHtml = `
+            <div class="downloads-section">
+                <p style="color:var(--text-secondary);font-size:.85rem;text-align:center;">
+                    No direct player available for this episode.
+                </p>
+            </div>
+        `;
+    }
+    
     dom.modalList.innerHTML = `
         <div class="watch-container">
             <div class="episode-nav">
                 <button class="server-btn" ${prevDisabled} onclick="royaldramaPlayEpisode(${idx - 1})">◀ Prev</button>
-                <span class="ep-count">Episode ${idx + 1} / ${eps.length}</span>
+                <span class="ep-nav-title" style="flex:1;text-align:center;font-weight:bold;">${ep.name}</span>
                 <button class="server-btn" ${nextDisabled} onclick="royaldramaPlayEpisode(${idx + 1})">Next ▶</button>
             </div>
-            <div class="rd-player-crop">
-                <iframe id="royaldramaFrame" class="rd-player-iframe" src="${ep.url}"
-                    frameborder="0" allow="autoplay; fullscreen; encrypted-media">
-                </iframe>
-            </div>
-            <div class="downloads-section">
-                <div class="downloads-label">Playback note</div>
-                <p style="color:var(--text-secondary);font-size:.85rem;">
-                    Royal-Drama loads its player via JavaScript behind bot protection,
-                    so we embed the original watch page — your browser handles access.
-                    If it doesn't autoplay, open it directly:
-                    <a class="dl-server-chip" href="${ep.url}" target="_blank" rel="noopener noreferrer">Open on Royal-Drama</a>
-                </p>
-            </div>
+            ${playerHtml}
         </div>`;
 }
 
-async function royaldramaPlay(url, name, poster) {
+async function royaldramaPlay(url, name, poster, servers = []) {
     openModal(name || 'Royal Drama', state.modalHistory.length > 0);
     dom.mainModal.classList.add('modal-wide');
-    dom.modalList.innerHTML = `
-        <div class="watch-container">
-            <div class="rd-player-crop">
-                <iframe id="royaldramaFrame" class="rd-player-iframe" src="${url}"
-                    frameborder="0" allow="autoplay; fullscreen; encrypted-media">
+    
+    let serverBtns = '';
+    let playerHtml = '';
+    
+    if (servers.length > 0) {
+        if (servers.length > 1) {
+            serverBtns = servers.map((s, i) =>
+                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${s.url}" onclick="royaldramaSwitchServer(this)">${s.name}</button>`
+            ).join('');
+        }
+        playerHtml = `
+            ${serverBtns ? `<div class="server-row">${serverBtns}</div>` : ''}
+            <div class="embed-frame-wrap">
+                <iframe id="royaldramaFrame" src="${servers[0].url}"
+                    frameborder="0" allowfullscreen allow="autoplay; fullscreen">
                 </iframe>
             </div>
+        `;
+    } else {
+        playerHtml = `
             <div class="downloads-section">
-                <div class="downloads-label">Playback note</div>
-                <p style="color:var(--text-secondary);font-size:.85rem;">
-                    Royal-Drama loads its player via JavaScript behind bot protection,
-                    so we embed the original watch page — your browser handles access.
-                    If it doesn't autoplay, open it directly:
-                    <a class="dl-server-chip" href="${url}" target="_blank" rel="noopener noreferrer">Open on Royal-Drama</a>
+                <p style="color:var(--text-secondary);font-size:.85rem;text-align:center;">
+                    No direct player available for this title.
                 </p>
             </div>
+        `;
+    }
+    }
+    
+    dom.modalList.innerHTML = `
+        <div class="watch-container">
+            ${playerHtml}
         </div>`;
 }
 
@@ -1697,7 +1735,7 @@ async function doSearch() {
             renderResults(state.results, 'sahid4u');
         } else if (state.provider === 'royaldrama') {
             const data = await royaldramaSearch(q);
-            state.results = (data.results || []).map(r => ({ ...r, source: 'royaldrama' }));
+            state.results = (data || []).map(r => ({ ...r, source: 'royaldrama' }));
             renderResults(state.results, 'royaldrama');
         } else {
             const data = await apiSearch(q, state.type);

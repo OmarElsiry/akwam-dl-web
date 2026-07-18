@@ -107,18 +107,45 @@ def _parse_grid(html: str, force_type: str | None = None) -> list[dict]:
 
 
 def search(query: str) -> list[dict]:
-    """Search is bot-protected server-side; attempt and return [] on failure."""
+    """Search is bot-protected server-side. Try cloudscraper first.
+    If it fails, fall back to scanning the latest pages concurrently."""
     try:
         import cloudscraper
         sc = cloudscraper.create_scraper()
-        r = sc.get(HOMEPAGE + "/search.php", params={"keywords": query},
-                   headers=HEADERS, timeout=30)
+        r = sc.get(BASE + "/search.php", params={"keywords": query},
+                   headers=HEADERS, timeout=10)
         if r.status_code == 200 and "pm-ul-browse-videos" in r.text:
             return _parse_grid(r.text)
     except Exception:
         pass
-    # Best-effort: nothing usable without a working search endpoint.
-    return []
+
+    # Best-effort fallback: search through recent pages
+    import concurrent.futures
+    results = []
+    seen_urls = set()
+    query_lower = query.lower()
+
+    def fetch_and_filter(func, page):
+        try:
+            items = func(page)
+            return [item for item in items if query_lower in item.get('name', '').lower()]
+        except Exception:
+            return []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        futures = []
+        for p in range(1, 4):
+            futures.append(executor.submit(fetch_and_filter, get_series, p))
+            futures.append(executor.submit(fetch_and_filter, get_movies, p))
+            futures.append(executor.submit(fetch_and_filter, get_episodes_list, p))
+
+        for future in concurrent.futures.as_completed(futures):
+            for item in future.result():
+                if item['url'] not in seen_urls:
+                    seen_urls.add(item['url'])
+                    results.append(item)
+
+    return results
 
 
 def get_homepage() -> list[dict]:
@@ -212,11 +239,36 @@ def get_detail(url: str) -> dict:
     ctype = "series" if episodes else "movie"
 
     # Server entry = the watch page itself, routed through /api/resolve-embed.
-    servers = [{
-        "name": "Royal-Drama",
-        "url": url,
-        "source_page": url,
-    }]
+    servers = []
+    view_url = url.replace("watch.php", "view.php")
+    try:
+        v_html = _fetch(view_url)
+        for li_match in re.finditer(r'<li[^>]*data-embed="([^"]+)"[^>]*>(.*?)</li>', v_html, re.IGNORECASE | re.DOTALL):
+            embed_html = li_match.group(1)
+            inner_html = li_match.group(2)
+            
+            src_match = re.search(r"src=['\"]([^'\"]+)['\"]", embed_html, re.IGNORECASE)
+            name_match = re.search(r"<strong>([^<]+)</strong>", inner_html, re.IGNORECASE)
+            if not name_match:
+                name_match = re.search(r">([^<]+)</a>", inner_html, re.IGNORECASE)
+                
+            if src_match and name_match:
+                servers.append({"name": name_match.group(1).strip(), "url": src_match.group(1)})
+                
+        # If no servers found from li tags, try finding an iframe directly in view_url
+        if not servers and v_html:
+            iframe_match = re.search(r'<iframe[^>]*src=["\']([^"\']+)["\']', v_html, re.IGNORECASE)
+            if iframe_match:
+                servers.append({"name": "Server 1", "url": iframe_match.group(1)})
+                
+    except Exception as e:
+        pass
+    
+    if not servers:
+        # Try finding an iframe directly in watch url
+        iframe_match = re.search(r'<iframe[^>]*src=["\']([^"\']+)["\']', html, re.IGNORECASE)
+        if iframe_match:
+            servers.append({"name": "Server 1", "url": iframe_match.group(1)})
 
     return {
         "metadata": {
