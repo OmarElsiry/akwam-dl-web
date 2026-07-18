@@ -1542,6 +1542,9 @@ async function royaldramaShowDetail(item) {
     dom.modalTitle.innerText = name;
 
     if (isSeries) {
+        royaldramaEpisodes = episodes;
+        royaldramaSeriesName = name;
+        royaldramaPoster = poster;
         const currentView = () => royaldramaShowDetail(item);
         dom.modalList.innerHTML = `
             <div style="text-align:center;padding:0 0 1rem;">
@@ -1556,7 +1559,7 @@ async function royaldramaShowDetail(item) {
                 state.activeItem = { name: ep.name, url: ep.url, source: 'royaldrama', type: 'movie' };
                 dom.shareModalBtn.style.display = 'flex';
                 state.modalHistory.push(currentView);
-                royaldramaPlay(ep.url, ep.name);
+                royaldramaPlayEpisode(idx);
             };
             dom.modalList.appendChild(row);
         });
@@ -1565,6 +1568,42 @@ async function royaldramaShowDetail(item) {
 
     // Movie (or series page without parsed episodes) → play the watch page.
     royaldramaPlay(item.url, name, poster);
+}
+
+let royaldramaEpisodes = [];
+let royaldramaSeriesName = '';
+let royaldramaPoster = '';
+
+function royaldramaPlayEpisode(idx) {
+    const eps = royaldramaEpisodes;
+    const ep = eps[idx];
+    if (!ep) return;
+    openModal(`${royaldramaSeriesName} — ${ep.name}`, state.modalHistory.length > 0);
+    dom.mainModal.classList.add('modal-wide');
+    const prevDisabled = idx <= 0 ? 'disabled' : '';
+    const nextDisabled = idx >= eps.length - 1 ? 'disabled' : '';
+    dom.modalList.innerHTML = `
+        <div class="watch-container">
+            <div class="episode-nav">
+                <button class="server-btn" ${prevDisabled} onclick="royaldramaPlayEpisode(${idx - 1})">◀ Prev</button>
+                <span class="ep-count">Episode ${idx + 1} / ${eps.length}</span>
+                <button class="server-btn" ${nextDisabled} onclick="royaldramaPlayEpisode(${idx + 1})">Next ▶</button>
+            </div>
+            <div class="embed-frame-wrap">
+                <iframe id="royaldramaFrame" src="${ep.url}"
+                    frameborder="0" allowfullscreen allow="autoplay; fullscreen">
+                </iframe>
+            </div>
+            <div class="downloads-section">
+                <div class="downloads-label">Playback note</div>
+                <p style="color:var(--text-secondary);font-size:.85rem;">
+                    Royal-Drama loads its player via JavaScript behind bot protection,
+                    so we embed the original watch page — your browser handles access.
+                    If it doesn't autoplay, open it directly:
+                    <a class="dl-server-chip" href="${ep.url}" target="_blank" rel="noopener noreferrer">Open on Royal-Drama</a>
+                </p>
+            </div>
+        </div>`;
 }
 
 async function royaldramaPlay(url, name, poster) {
