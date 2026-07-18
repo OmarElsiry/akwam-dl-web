@@ -106,49 +106,88 @@ def _parse_grid(html: str, force_type: str | None = None) -> list[dict]:
     return items
 
 
-def search(query: str) -> list[dict]:
-    """Search is bot-protected server-side. Try cloudscraper first.
-    If it fails, fall back to scanning the latest pages concurrently."""
+import threading
+import time
+import concurrent.futures
+
+_cache = {
+    "items": [],
+    "last_updated": 0.0,
+    "lock": threading.Lock(),
+    "updating": False
+}
+
+CACHE_TTL = 1800  # 30 minutes
+
+
+def _build_cache():
+    global _cache
+    with _cache["lock"]:
+        if _cache["updating"]:
+            return
+        _cache["updating"] = True
+
     try:
-        import cloudscraper
-        sc = cloudscraper.create_scraper()
-        r = sc.get(BASE + "/search.php", params={"keywords": query},
-                   headers=HEADERS, timeout=10)
-        if r.status_code == 200 and "pm-ul-browse-videos" in r.text:
-            return _parse_grid(r.text)
-    except Exception:
-        pass
+        urls = []
+        # Series pages 1 to 54
+        urls.append(("series", "https://w9.royal-drama.com/all-series1.php"))
+        for p in range(2, 55):
+            urls.append(("series", f"https://w9.royal-drama.com/all-series.php?&page={p}"))
+        
+        # Movies pages 1 to 24
+        urls.append(("movie", "https://w9.royal-drama.com/movies.php"))
+        for p in range(2, 25):
+            urls.append(("movie", f"https://w9.royal-drama.com/movies.php?&page={p}"))
 
-    # Best-effort fallback: search through recent pages
-    import concurrent.futures
-    results = []
-    seen_urls = set()
-    query_lower = query.lower()
-
-    def fetch_and_filter(func, page):
-        try:
-            items = func(page)
-            return [item for item in items if query_lower in item.get('name', '').lower()]
-        except Exception:
+        def fetch_and_parse(item_type, url):
+            try:
+                html = _fetch(url)
+                if html:
+                    return _parse_grid(html, force_type=item_type)
+            except Exception:
+                pass
             return []
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        futures = []
-        for p in range(1, 4):
-            futures.append(executor.submit(fetch_and_filter, get_series, p))
-            futures.append(executor.submit(fetch_and_filter, get_movies, p))
-            futures.append(executor.submit(fetch_and_filter, get_episodes_list, p))
+        new_items = []
+        seen_urls = set()
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=35) as executor:
+            futures = [executor.submit(fetch_and_parse, t, u) for t, u in urls]
+            for future in concurrent.futures.as_completed(futures):
+                for item in future.result():
+                    if item["url"] not in seen_urls:
+                        seen_urls.add(item["url"])
+                        new_items.append(item)
 
-        for future in concurrent.futures.as_completed(futures):
-            for item in future.result():
-                if item['url'] not in seen_urls:
-                    seen_urls.add(item['url'])
-                    results.append(item)
+        if new_items:
+            _cache["items"] = new_items
+            _cache["last_updated"] = time.time()
+    finally:
+        _cache["updating"] = False
 
+
+def search(query: str) -> list[dict]:
+    """Search is bot-protected. We query the local full-site memory cache."""
+    # Ensure cache is initialized
+    if not _cache["items"]:
+        _build_cache()
+    # Trigger background cache update if expired
+    elif time.time() - _cache["last_updated"] > CACHE_TTL and not _cache["updating"]:
+        threading.Thread(target=_build_cache, daemon=True).start()
+
+    query_lower = query.lower()
+    results = []
+    for item in _cache["items"]:
+        if query_lower in item["name"].lower():
+            results.append(item)
     return results
 
 
 def get_homepage() -> list[dict]:
+    # Trigger background cache update on homepage load to keep cache warm
+    if time.time() - _cache["last_updated"] > CACHE_TTL and not _cache["updating"]:
+        threading.Thread(target=_build_cache, daemon=True).start()
+        
     html = _fetch(HOMEPAGE)
     return _parse_grid(html) if html else []
 
@@ -156,7 +195,7 @@ def get_homepage() -> list[dict]:
 def get_series(page: int = 1) -> list[dict]:
     url = "https://w9.royal-drama.com/all-series1.php"
     if page > 1:
-        url = f"https://w9.royal-drama.com/all-series{page}.php"
+        url = f"https://w9.royal-drama.com/all-series.php?&page={page}"
     html = _fetch(url)
     return _parse_grid(html, force_type="series") if html else []
 
@@ -164,7 +203,7 @@ def get_series(page: int = 1) -> list[dict]:
 def get_movies(page: int = 1) -> list[dict]:
     url = "https://w9.royal-drama.com/movies.php"
     if page > 1:
-        url = f"https://w9.royal-drama.com/movies{page}.php"
+        url = f"https://w9.royal-drama.com/movies.php?&page={page}"
     html = _fetch(url)
     return _parse_grid(html, force_type="movie") if html else []
 
@@ -172,7 +211,7 @@ def get_movies(page: int = 1) -> list[dict]:
 def get_episodes_list(page: int = 1) -> list[dict]:
     url = "https://w9.royal-drama.com/episodes2.php"
     if page > 1:
-        url = f"https://w9.royal-drama.com/episodes{page}.php"
+        url = f"https://w9.royal-drama.com/episodes.php?&page={page}"
     html = _fetch(url)
     return _parse_grid(html, force_type="series") if html else []
 
