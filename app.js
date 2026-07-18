@@ -1618,8 +1618,8 @@ async function royaldramaPlayEpisode(idx) {
     showModalLoading(false);
     
     dom.mainModal.classList.add('modal-wide');
-    const prevDisabled = idx <= 0 ? 'disabled' : '';
-    const nextDisabled = idx >= eps.length - 1 ? 'disabled' : '';
+    const nextDisabled = idx <= 0 ? 'disabled' : '';
+    const prevDisabled = idx >= eps.length - 1 ? 'disabled' : '';
     
     const servers = data.servers || [];
     let serverBtns = '';
@@ -1652,9 +1652,9 @@ async function royaldramaPlayEpisode(idx) {
     dom.modalList.innerHTML = `
         <div class="watch-container">
             <div class="episode-nav">
-                <button class="server-btn" ${prevDisabled} onclick="royaldramaPlayEpisode(${idx - 1})">◀ Prev</button>
+                <button class="server-btn" ${prevDisabled} onclick="royaldramaPlayEpisode(${idx + 1})">◀ Prev</button>
                 <span class="ep-nav-title" style="flex:1;text-align:center;font-weight:bold;">${ep.name}</span>
-                <button class="server-btn" ${nextDisabled} onclick="royaldramaPlayEpisode(${idx + 1})">Next ▶</button>
+                <button class="server-btn" ${nextDisabled} onclick="royaldramaPlayEpisode(${idx - 1})">Next ▶</button>
             </div>
             ${playerHtml}
         </div>`;
