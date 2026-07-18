@@ -84,6 +84,12 @@ dom.providerOpts.forEach(opt => {
             dom.searchInput.placeholder = 'Search movies, series…';
         } else if (state.provider === 'royaldrama') {
             dom.searchInput.placeholder = 'Search (browse works best — search is limited)…';
+            showLoading(true);
+            royaldramaHome().then(items => {
+                state.results = items;
+                renderResults(items, 'royaldrama');
+                showLoading(false);
+            }).catch(() => showLoading(false));
         } else if (state.provider === 'sahid4u') {
             dom.searchInput.placeholder = 'Search movies, series…';
         } else {
@@ -405,9 +411,10 @@ function renderResults(results, type) {
         }
 
         // Thumbnail for external source results
-        const thumbUrl = isEgyDead ? item.thumbnail : isWecima ? item.poster : null;
+        const posterUrl = isEgyDead ? item.thumbnail : (item.poster || item.thumbnail || null);
+        const thumbUrl = posterUrl ? (isEgyDead || isWecima ? `https://corsproxy.io/?${encodeURIComponent(posterUrl)}` : posterUrl) : null;
         const thumbHtml = thumbUrl
-            ? `<div class="result-thumb"><img src="https://corsproxy.io/?${encodeURIComponent(thumbUrl)}" alt="" loading="lazy"></div>`
+            ? `<div class="result-thumb"><img src="${thumbUrl}" alt="" loading="lazy"></div>`
             : '';
 
         const div = document.createElement('div');
@@ -1515,6 +1522,31 @@ async function royaldramaSearch(q) {
     const res = await fetch(`/api/royaldrama/search?q=${encodeURIComponent(q)}`);
     const data = await res.json();
     return data.results || [];
+}
+async function royaldramaHome() {
+    const res = await fetch('/api/royaldrama/home');
+    const data = await res.json();
+    return (data.items || []).map(r => ({ ...r, source: 'royaldrama' }));
+}
+async function royaldramaBrowseSeries(page = 1) {
+    const res = await fetch(`/api/royaldrama/series?page=${page}`);
+    const data = await res.json();
+    return (data.items || []).map(r => ({ ...r, source: 'royaldrama' }));
+}
+async function royaldramaBrowseMovies(page = 1) {
+    const res = await fetch(`/api/royaldrama/movies?page=${page}`);
+    const data = await res.json();
+    return (data.items || []).map(r => ({ ...r, source: 'royaldrama' }));
+}
+async function royaldramaBrowseEpisodes(page = 1) {
+    const res = await fetch(`/api/royaldrama/episodes?page=${page}`);
+    const data = await res.json();
+    return (data.items || []).map(r => ({ ...r, source: 'royaldrama' }));
+}
+async function royaldramaBrowseCategory(slug, page = 1) {
+    const res = await fetch(`/api/royaldrama/category?slug=${slug}`);
+    const data = await res.json();
+    return (data.items || []).map(r => ({ ...r, source: 'royaldrama' }));
 }
 async function royaldramaDetail(url) {
     const res = await fetch(`/api/royaldrama/detail?url=${encodeURIComponent(url)}`);
