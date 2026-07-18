@@ -45,8 +45,8 @@ def _fetch(url: str, timeout: int = 30) -> str | None:
         r = _req.get(url, headers=HEADERS, impersonate="chrome110", timeout=timeout)
         r.raise_for_status()
         return r.text
-    except Exception:
-        return None
+    except Exception as e:
+        raise e
 
 
 def _abs(url: str) -> str:
