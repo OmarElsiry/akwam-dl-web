@@ -40,11 +40,29 @@ _CAT_URLS = {
 }
 
 
+def _to_google_translate_url(url: str) -> str:
+    if "royal-drama.com" not in url:
+        return url
+    url_goog = url.replace("https://w8.royal-drama.com", "https://w8-royal--drama-com.translate.goog")
+    url_goog = url_goog.replace("https://w9.royal-drama.com", "https://w9-royal--drama-com.translate.goog")
+    url_goog = url_goog.replace("https://royal-drama.com", "https://royal--drama-com.translate.goog")
+    if "?" in url_goog:
+        url_goog += "&_x_tr_sl=auto&_x_tr_tl=ar"
+    else:
+        url_goog += "?_x_tr_sl=auto&_x_tr_tl=ar"
+    return url_goog
+
+
 def _fetch(url: str, timeout: int = 30) -> str | None:
     try:
-        r = _req.get(url, headers=HEADERS, impersonate="chrome110", timeout=timeout)
+        goog_url = _to_google_translate_url(url)
+        r = _req.get(goog_url, headers=HEADERS, impersonate="chrome110", timeout=timeout)
         r.raise_for_status()
-        return r.text
+        text = r.text
+        # Revert google translate links inside HTML
+        text = text.replace("-royal--drama-com.translate.goog", ".royal-drama.com")
+        text = text.replace("royal--drama-com.translate.goog", "royal-drama.com")
+        return text
     except Exception:
         return None
 
