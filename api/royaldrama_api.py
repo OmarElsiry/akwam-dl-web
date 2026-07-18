@@ -124,88 +124,14 @@ def _parse_grid(html: str, force_type: str | None = None) -> list[dict]:
     return items
 
 
-import threading
-import time
-import concurrent.futures
-
-_cache = {
-    "items": [],
-    "last_updated": 0.0,
-    "lock": threading.Lock(),
-    "updating": False
-}
-
-CACHE_TTL = 1800  # 30 minutes
-
-
-def _build_cache():
-    global _cache
-    with _cache["lock"]:
-        if _cache["updating"]:
-            return
-        _cache["updating"] = True
-
-    try:
-        urls = []
-        # Series pages 1 to 54
-        urls.append(("series", f"{BASE}/all-series1.php"))
-        for p in range(2, 55):
-            urls.append(("series", f"{BASE}/all-series.php?&page={p}"))
-        
-        # Movies pages 1 to 24
-        urls.append(("movie", f"{BASE}/movies.php"))
-        for p in range(2, 25):
-            urls.append(("movie", f"{BASE}/movies.php?&page={p}"))
-
-        def fetch_and_parse(item_type, url):
-            try:
-                html = _fetch(url)
-                if html:
-                    return _parse_grid(html, force_type=item_type)
-            except Exception:
-                pass
-            return []
-
-        new_items = []
-        seen_urls = set()
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=35) as executor:
-            futures = [executor.submit(fetch_and_parse, t, u) for t, u in urls]
-            for future in concurrent.futures.as_completed(futures):
-                for item in future.result():
-                    if item["url"] not in seen_urls:
-                        seen_urls.add(item["url"])
-                        new_items.append(item)
-
-        if new_items:
-            _cache["items"] = new_items
-            _cache["last_updated"] = time.time()
-    finally:
-        _cache["updating"] = False
-
-
 def search(query: str) -> list[dict]:
-    """Search is bot-protected. We query the local full-site memory cache."""
-    # Ensure cache is initialized
-    if not _cache["items"]:
-        _build_cache()
-    # Trigger background cache update if expired
-    elif time.time() - _cache["last_updated"] > CACHE_TTL and not _cache["updating"]:
-        threading.Thread(target=_build_cache, daemon=True).start()
-
-    query_lower = query.lower()
-    results = []
-    for item in _cache["items"]:
-        if query_lower in item["name"].lower():
-            results.append(item)
-    return results
+    """Search is bot-protected. We query the search.php endpoint through Google Translate proxy."""
+    url = f"{BASE}/search.php?keywords={query}"
+    html = _fetch(url)
+    return _parse_grid(html) if html else []
 
 
 def get_homepage() -> list[dict]:
-    # Trigger background cache update on homepage load to keep cache warm
-    if time.time() - _cache["last_updated"] > CACHE_TTL and not _cache["updating"]:
-        threading.Thread(target=_build_cache, daemon=True).start()
-        
     html = _fetch(HOMEPAGE)
     return _parse_grid(html) if html else []
 
