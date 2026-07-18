@@ -14,7 +14,7 @@ routes the watch URL through the generic /api/resolve-embed pipeline and also
 offers the original site link as a fallback.
 """
 import re
-import requests as _req
+from curl_cffi import requests as _req
 
 BASE = "https://w9.royal-drama.com"
 HOMEPAGE = "https://w9.royal-drama.com/home8"
@@ -42,9 +42,9 @@ _CAT_URLS = {
 
 def _fetch(url: str, timeout: int = 30) -> str | None:
     try:
-        r = _req.get(url, headers=HEADERS, timeout=timeout)
+        r = _req.get(url, headers=HEADERS, impersonate="chrome110", timeout=timeout)
         r.raise_for_status()
-        return r.content.decode("utf-8", errors="replace")
+        return r.text
     except Exception:
         return None
 
