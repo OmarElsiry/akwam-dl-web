@@ -1589,9 +1589,9 @@ function royaldramaPlayEpisode(idx) {
                 <span class="ep-count">Episode ${idx + 1} / ${eps.length}</span>
                 <button class="server-btn" ${nextDisabled} onclick="royaldramaPlayEpisode(${idx + 1})">Next ▶</button>
             </div>
-            <div class="embed-frame-wrap">
-                <iframe id="royaldramaFrame" src="${ep.url}"
-                    frameborder="0" allowfullscreen allow="autoplay; fullscreen">
+            <div class="rd-player-crop">
+                <iframe id="royaldramaFrame" class="rd-player-iframe" src="${ep.url}"
+                    frameborder="0" allow="autoplay; fullscreen; encrypted-media">
                 </iframe>
             </div>
             <div class="downloads-section">
@@ -1611,9 +1611,9 @@ async function royaldramaPlay(url, name, poster) {
     dom.mainModal.classList.add('modal-wide');
     dom.modalList.innerHTML = `
         <div class="watch-container">
-            <div class="embed-frame-wrap">
-                <iframe id="royaldramaFrame" src="${url}"
-                    frameborder="0" allowfullscreen allow="autoplay; fullscreen">
+            <div class="rd-player-crop">
+                <iframe id="royaldramaFrame" class="rd-player-iframe" src="${url}"
+                    frameborder="0" allow="autoplay; fullscreen; encrypted-media">
                 </iframe>
             </div>
             <div class="downloads-section">

@@ -360,6 +360,29 @@ button.btn-primary:active { transform: translateY(0); }
   cursor: not-allowed;
 }
 
+/* Royal-Drama: crop the embedded page to the player region only
+   (cross-origin iframe internals can't be styled, so we crop our viewport). */
+.rd-player-crop {
+  position: relative;
+  width: 100%;
+  max-width: 1140px;
+  height: 520px;
+  margin: 0 auto;
+  overflow: hidden;
+  background: #000;
+  border-radius: 8px;
+}
+.rd-player-iframe {
+  position: absolute;
+  top: -187px;          /* hide the site header, reveal the player */
+  left: 50%;
+  margin-left: -640px;  /* center the 1280px page's player area */
+  width: 1280px;
+  height: 846px;        /* 187 + 659 (player box height) */
+  border: 0;
+  background: #000;
+}
+
 /* Fav toggle */
 .fav-toggle {
   background: none; border: none; cursor: pointer;
