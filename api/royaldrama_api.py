@@ -16,8 +16,8 @@ offers the original site link as a fallback.
 import re
 from curl_cffi import requests as _req
 
-BASE = "https://w9.royal-drama.com"
-HOMEPAGE = "https://w9.royal-drama.com/home8"
+BASE = "https://w8.royal-drama.com"
+HOMEPAGE = "https://w8.royal-drama.com/home8"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -29,14 +29,14 @@ HEADERS = {
 }
 
 _CAT_URLS = {
-    "turkish-series":  "https://w9.royal-drama.com/category3.php?cat=turkish-series-3sk",
-    "arabic-series":   "https://w9.royal-drama.com/category3.php?cat=arabic-series1-2024",
-    "indian-series":   "https://w9.royal-drama.com/category3.php?cat=indian-series-2025",
-    "asian-series":    "https://w9.royal-drama.com/category3.php?cat=musalsalat-asiawia",
-    "foreign-series":  "https://w9.royal-drama.com/category3.php?cat=musalsalat-ajnabia-netflix",
-    "anime-series":    "https://w9.royal-drama.com/category3.php?cat=musalsalat-animiee-2025",
-    "tv-shows":        "https://w9.royal-drama.com/category3.php?cat=tv-shows",
-    "movies":          "https://w9.royal-drama.com/category3.php?cat=aflams-2026-1",
+    "turkish-series":  BASE + "/category3.php?cat=turkish-series-3sk",
+    "arabic-series":   BASE + "/category3.php?cat=arabic-series1-2024",
+    "indian-series":   BASE + "/category3.php?cat=indian-series-2025",
+    "asian-series":    BASE + "/category3.php?cat=musalsalat-asiawia",
+    "foreign-series":  BASE + "/category3.php?cat=musalsalat-ajnabia-netflix",
+    "anime-series":    BASE + "/category3.php?cat=musalsalat-animiee-2025",
+    "tv-shows":        BASE + "/category3.php?cat=tv-shows",
+    "movies":          BASE + "/category3.php?cat=aflams-2026-1",
 }
 
 
@@ -45,8 +45,8 @@ def _fetch(url: str, timeout: int = 30) -> str | None:
         r = _req.get(url, headers=HEADERS, impersonate="chrome110", timeout=timeout)
         r.raise_for_status()
         return r.text
-    except Exception as e:
-        raise e
+    except Exception:
+        return None
 
 
 def _abs(url: str) -> str:
@@ -130,14 +130,14 @@ def _build_cache():
     try:
         urls = []
         # Series pages 1 to 54
-        urls.append(("series", "https://w9.royal-drama.com/all-series1.php"))
+        urls.append(("series", f"{BASE}/all-series1.php"))
         for p in range(2, 55):
-            urls.append(("series", f"https://w9.royal-drama.com/all-series.php?&page={p}"))
+            urls.append(("series", f"{BASE}/all-series.php?&page={p}"))
         
         # Movies pages 1 to 24
-        urls.append(("movie", "https://w9.royal-drama.com/movies.php"))
+        urls.append(("movie", f"{BASE}/movies.php"))
         for p in range(2, 25):
-            urls.append(("movie", f"https://w9.royal-drama.com/movies.php?&page={p}"))
+            urls.append(("movie", f"{BASE}/movies.php?&page={p}"))
 
         def fetch_and_parse(item_type, url):
             try:
@@ -193,25 +193,25 @@ def get_homepage() -> list[dict]:
 
 
 def get_series(page: int = 1) -> list[dict]:
-    url = "https://w9.royal-drama.com/all-series1.php"
+    url = f"{BASE}/all-series1.php"
     if page > 1:
-        url = f"https://w9.royal-drama.com/all-series.php?&page={page}"
+        url = f"{BASE}/all-series.php?&page={page}"
     html = _fetch(url)
     return _parse_grid(html, force_type="series") if html else []
 
 
 def get_movies(page: int = 1) -> list[dict]:
-    url = "https://w9.royal-drama.com/movies.php"
+    url = f"{BASE}/movies.php"
     if page > 1:
-        url = f"https://w9.royal-drama.com/movies.php?&page={page}"
+        url = f"{BASE}/movies.php?&page={page}"
     html = _fetch(url)
     return _parse_grid(html, force_type="movie") if html else []
 
 
 def get_episodes_list(page: int = 1) -> list[dict]:
-    url = "https://w9.royal-drama.com/episodes2.php"
+    url = f"{BASE}/episodes2.php"
     if page > 1:
-        url = f"https://w9.royal-drama.com/episodes.php?&page={page}"
+        url = f"{BASE}/episodes.php?&page={page}"
     html = _fetch(url)
     return _parse_grid(html, force_type="series") if html else []
 
