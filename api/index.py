@@ -21,6 +21,7 @@ from .sahid4u_api import (
     get_seasons as sahid4u_seasons,
     get_episodes as sahid4u_episodes,
     get_content_info as sahid4u_content_info,
+    get_content_servers as sahid4u_servers,
     get_content_servers_and_downloads as sahid4u_servers_downloads,
     get_episode_series_info as sahid4u_episode_series_info,
 )
@@ -35,23 +36,20 @@ from .royaldrama_api import (
     get_detail as royaldrama_detail,
 )
 from .video_resolver import VideoResolver, ResolvedVideo
-from .sahid4u_api import (
-    search as sahid4u_search,
-    get_content_servers as sahid4u_servers,
-    get_content_info as sahid4u_info,
-    get_seasons as sahid4u_seasons,
-    get_episodes as sahid4u_episodes,
-)
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi.responses import HTMLResponse, FileResponse, Response
-from fastapi.staticfiles import StaticFiles
 import os
 import httpx
 import uuid
 import time
 
 app = FastAPI(title="Vortex Media API")
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+PUBLIC_ASSETS = {
+    "binance id  425075013.jpg": "binance id  425075013.jpg",
+    "0xe21e3f2149caae5330702ca0e6cf6e66f668433f.jpg": "0xe21e3f2149caae5330702ca0e6cf6e66f668433f.jpg",
+}
 
 @app.get("/", response_class=FileResponse)
 async def read_root():
@@ -77,8 +75,16 @@ async def get_sahid4u_worker_js():
 async def get_faselhd_worker_js():
     return FileResponse(os.path.join(os.path.dirname(__file__), "..", "faselhd-worker.js"))
 
-# Mount static files from project root
-app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "..")), name="static")
+@app.get("/favicon.svg")
+async def get_favicon():
+    return FileResponse(os.path.join(PROJECT_ROOT, "favicon.svg"))
+
+@app.get("/static/{filename:path}")
+async def get_public_asset(filename: str):
+    asset = PUBLIC_ASSETS.get(filename)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return FileResponse(os.path.join(PROJECT_ROOT, asset))
 
 
 # Enable CORS for frontend interaction
@@ -666,17 +672,6 @@ async def royaldrama_detail_ep(url: str):
 #  Sahid4u endpoints
 # ------------------------------------------------------------------ #
 
-@app.get("/api/sahid4u/search")
-async def sahid4u_search_ep(q: str):
-    """Search Sahid4u."""
-
-    try:
-        loop = asyncio.get_event_loop()
-        results = await loop.run_in_executor(None, sahid4u_search, q)
-        return {"results": results}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/api/sahid4u/servers")
 async def sahid4u_servers_ep(req: LinkRequest):
     """Get watch servers for a Sahid4u content URL."""
@@ -694,41 +689,8 @@ async def sahid4u_info_ep(req: LinkRequest):
 
     try:
         loop = asyncio.get_event_loop()
-        info = await loop.run_in_executor(None, sahid4u_info, req.url)
+        info = await loop.run_in_executor(None, sahid4u_content_info, req.url)
         return info
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/sahid4u/watch")
-async def sahid4u_watch_ep(req: LinkRequest):
-    """Get watch servers and info for a Sahid4u content URL."""
-    try:
-        loop = asyncio.get_event_loop()
-        servers = await loop.run_in_executor(None, sahid4u_servers, req.url)
-        info = await loop.run_in_executor(None, sahid4u_info, req.url)
-        return {"servers": servers, "info": info}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/sahid4u/seasons")
-async def sahid4u_seasons_ep(req: LinkRequest):
-    """Get seasons for a Sahid4u series URL."""
-
-    try:
-        loop = asyncio.get_event_loop()
-        seasons = await loop.run_in_executor(None, sahid4u_seasons, req.url)
-        return {"seasons": seasons}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/sahid4u/episodes")
-async def sahid4u_episodes_ep(req: LinkRequest):
-    """Get episodes for a Sahid4u season URL."""
-
-    try:
-        loop = asyncio.get_event_loop()
-        episodes = await loop.run_in_executor(None, sahid4u_episodes, req.url)
-        return {"episodes": episodes}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

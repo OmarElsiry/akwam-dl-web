@@ -6,10 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Vortex Premium — fast, clean link resolver for Akwam, EgyDead, and Wecima content.">
     <title id="pageTitle">Vortex Premium</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=20260726-3">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" href="favicon.svg">
 </head>
@@ -17,7 +14,7 @@
 <body>
     <div class="container">
         <header>
-            <div style="display:flex;align-items:center;gap:0.75rem;">
+            <div class="brand-lockup">
                 <div id="brandIcon" class="brand-icon">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -30,14 +27,14 @@
             </div>
 
             <div class="header-actions">
-                <button id="donateBtn" class="btn-icon" title="Support the project">
+                <button id="donateBtn" class="btn-icon" title="Support the project" aria-label="Support the project">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
                         <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
                     </svg>
                 </button>
 
-                <button id="favoritesBtn" class="btn-icon" title="My Favorites">
+                <button id="favoritesBtn" class="btn-icon" title="My Favorites" aria-label="Open favorites" aria-expanded="false" aria-controls="drawer">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
                         <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
@@ -48,29 +45,31 @@
 
         <main>
             <section class="search-card">
-                <!-- Provider Switch -->
                 <div class="provider-row">
-                    <span class="provider-label">Source</span>
-                    <div class="provider-switch" id="providerSwitch">
-                        <button type="button" class="provider-opt active" data-value="akwam" id="providerAkwam">
+                    <div class="field-heading">
+                        <span class="provider-label">Choose a source</span>
+                        <span class="field-note">6 source options</span>
+                    </div>
+                    <div class="provider-switch" id="providerSwitch" role="group" aria-label="Content source">
+                        <button type="button" class="provider-opt active" data-value="akwam" id="providerAkwam" aria-pressed="true">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <path d="M21 15V6m-14 5l7-7 7 7M3 21h18" />
                             </svg>
                             Akwam
                         </button>
-                        <button type="button" class="provider-opt" data-value="egydead" id="providerEgydead">
+                        <button type="button" class="provider-opt" data-value="egydead" id="providerEgydead" aria-pressed="false">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <polygon points="5 3 19 12 5 21 5 3" />
                             </svg>
                             EgyDead
                         </button>
-                        <button type="button" class="provider-opt" data-value="sahid4u" id="providerSahid4u">
+                        <button type="button" class="provider-opt" data-value="sahid4u" id="providerSahid4u" aria-pressed="false">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
                             </svg>
                             Sahid4u
                         </button>
-                        <button type="button" class="provider-opt" data-value="wecima" id="providerWecima">
+                        <button type="button" class="provider-opt" data-value="wecima" id="providerWecima" aria-pressed="false">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <rect x="2" y="3" width="20" height="14" rx="2"/>
                                 <line x1="8" y1="21" x2="16" y2="21"/>
@@ -78,14 +77,14 @@
                             </svg>
                             Wecima
                         </button>
-                        <button type="button" class="provider-opt" data-value="faselhd" id="providerFaselhd">
+                        <button type="button" class="provider-opt" data-value="faselhd" id="providerFaselhd" aria-pressed="false">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <circle cx="12" cy="12" r="10"/>
                                 <polyline points="12 6 12 12 16 14"/>
                             </svg>
                             FaselHD
                         </button>
-                        <button type="button" class="provider-opt" data-value="royaldrama" id="providerRoyaldrama">
+                        <button type="button" class="provider-opt" data-value="royaldrama" id="providerRoyaldrama" aria-pressed="false">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/>
                                 <circle cx="12" cy="12" r="3"/>
@@ -95,45 +94,57 @@
                     </div>
                 </div>
 
+                <div class="search-label-row">
+                    <label for="searchInput">Search by title</label>
+                    <span>Press Enter to search</span>
+                </div>
                 <div class="input-group">
-                    <!-- Type switch (Akwam only) -->
                     <div class="select-wrapper" id="typeWrapper">
                         <div class="search-type-container">
-                            <div class="search-switch" id="searchTypeSwitch">
-                                <button type="button" class="switch-opt active" data-value="movie">Movies</button>
-                                <button type="button" class="switch-opt" data-value="series">Series</button>
+                            <div class="search-switch" id="searchTypeSwitch" role="group" aria-label="Content type">
+                                <button type="button" class="switch-opt active" data-value="movie" aria-pressed="true">Movies</button>
+                                <button type="button" class="switch-opt" data-value="series" aria-pressed="false">Series</button>
                             </div>
                         </div>
                     </div>
                     <input type="text" id="searchInput" aria-label="Search for a title" placeholder="Search for a title…" autocomplete="off">
-                    <button id="searchBtn" class="btn-primary">SEARCH</button>
+                    <button id="searchBtn" class="btn-primary">Search</button>
                 </div>
             </section>
 
-            <div id="loading" class="loading">
+            <div id="loading" class="loading" role="status" aria-live="polite" aria-label="Searching">
                 <div class="spinner"></div>
+                <span>Searching selected source…</span>
             </div>
 
-            <div id="resultsGrid" class="results-grid"></div>
+            <div id="resultsGrid" class="results-grid" aria-live="polite" aria-busy="false">
+                <div class="empty-state empty-state-ready">
+                    <span class="empty-index">01</span>
+                    <div>
+                        <h3>Ready when you are.</h3>
+                        <p>Search for a movie or series above. You can switch sources at any time.</p>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
 
     <!-- Main Modal -->
-    <div id="overlay" class="overlay">
-        <div class="modal" id="mainModal">
+    <div id="overlay" class="overlay" aria-hidden="true">
+        <div class="modal" id="mainModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
             <div class="modal-header">
                 <div style="display:flex;align-items:center;gap:0.5rem;">
-                    <button id="modalBackBtn" class="btn-icon" style="display:none;padding:0.3rem;" title="Go Back">
+                    <button id="modalBackBtn" class="btn-icon btn-icon-compact" style="display:none;" title="Go Back" aria-label="Go back">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M19 12H5"></path>
                             <polyline points="12 19 5 12 12 5"></polyline>
                         </svg>
                     </button>
-                    <div id="modalTitle" class="modal-title">Select Episode</div>
+                    <div id="modalTitle" class="modal-title" dir="auto">Select Episode</div>
                 </div>
                 <div style="display:flex;align-items:center;gap:0.5rem;">
-                    <button id="shareModalBtn" class="btn-icon" style="display:none;padding:0.3rem;" title="Share Link">
+                    <button id="shareModalBtn" class="btn-icon btn-icon-compact" style="display:none;" title="Share Link" aria-label="Share this title">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="18" cy="5" r="3"></circle>
@@ -146,8 +157,9 @@
                     <button id="closeModal" class="close-modal" aria-label="Close">&times;</button>
                 </div>
             </div>
-            <div id="modalLoading" class="loading">
+            <div id="modalLoading" class="loading" role="status" aria-live="polite" aria-label="Loading details">
                 <div class="spinner"></div>
+                <span>Loading details…</span>
             </div>
             <div id="modalList" class="modal-body"></div>
             <div id="finalUrl" style="display:none"></div>
@@ -155,10 +167,10 @@
     </div>
 
     <!-- Donation Modal -->
-    <div id="donationOverlay" class="overlay" style="z-index:2000;">
-        <div class="modal" style="max-width:420px;">
+    <div id="donationOverlay" class="overlay" aria-hidden="true">
+        <div class="modal donation-modal" role="dialog" aria-modal="true" aria-labelledby="donationTitle">
             <div class="modal-header">
-                <h3 class="modal-title">Support Project Vortex</h3>
+                <h3 class="modal-title" id="donationTitle">Support Project Vortex</h3>
                 <button id="closeDonation" class="close-modal" aria-label="Close">&times;</button>
             </div>
             <div class="modal-body" style="text-align:center;">
@@ -181,12 +193,12 @@
     </div>
 
     <!-- Favorites Drawer -->
-    <div id="drawerOverlay" class="drawer-overlay"></div>
-    <aside id="drawer" class="drawer" aria-label="Favorites">
+    <div id="drawerOverlay" class="drawer-overlay" aria-hidden="true"></div>
+    <aside id="drawer" class="drawer" aria-label="Favorites" aria-hidden="true" inert>
         <div class="drawer-header">
             <h3 id="drawerTitle">My Favorites</h3>
             <div style="display:flex;align-items:center;gap:0.5rem;">
-                <button id="shareFavoritesBtn" class="btn-icon" style="padding:0.3rem;" title="Share Favorites List">
+                <button id="shareFavoritesBtn" class="btn-icon btn-icon-compact" title="Share Favorites List" aria-label="Share favorites list">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="18" cy="5" r="3"></circle>
@@ -204,12 +216,12 @@
         </div>
     </aside>
 
-    <div id="toastContainer" class="toast-container"></div>
+    <div id="toastContainer" class="toast-container" role="status" aria-live="polite"></div>
 
-    <script src="akwam-worker.js"></script>
-    <script src="faselhd-worker.js"></script>
-    <script src="sahid4u-worker.js"></script>
-    <script src="app.js"></script>
+    <script src="akwam-worker.js?v=20260726"></script>
+    <script src="faselhd-worker.js?v=20260726"></script>
+    <script src="sahid4u-worker.js?v=20260726-3"></script>
+    <script src="app.js?v=20260726-6"></script>
 </body>
 
 </html>

@@ -1,7 +1,7 @@
 import re, os, time
 from urllib.parse import unquote
 
-FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY", "fc-186b4e776b4042dfa4043a97c4985cc9")
+FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY")
 
 VIDEO_HOSTS = [
     'uqload', 'dood', 'streamtape', 'upstream', 'vidoza', 'voe.sx',
@@ -12,6 +12,8 @@ VIDEO_HOSTS = [
     'hgcloud', 'vibuxer', 'minochinos', 'playmogo', 'forafile',
     'earnvids', 'dsvplay', 'doodstream', 'morencius'
 ]
+
+TRAILER_HOSTS = ('youtube.com', 'youtu.be', 'vimeo.com')
 
 SKIP_URL_PARTS = ['/type/', '?s=', '/page/', '/dmca', '#', '/wp-', '/feed']
 
@@ -37,6 +39,8 @@ class EgyDeadAPI:
         self._curl = None
 
     def _get_firecrawl(self):
+        if not FIRECRAWL_API_KEY:
+            return None
         if self._fc is None:
             try:
                 from firecrawl import Firecrawl
@@ -216,6 +220,30 @@ class EgyDeadAPI:
 
         return '', ''
 
+    def _fetch_watch_page(self, url: str, timeout=20) -> str:
+        """Submit the site's watch form so real servers are rendered."""
+        curl = self._get_curl()
+        if curl:
+            try:
+                r = curl.post(
+                    url, data={'View': '1'}, impersonate='chrome120',
+                    headers=HEADERS, timeout=timeout,
+                )
+                if r.status_code == 200 and 'serversList' in r.text:
+                    return r.text
+            except Exception:
+                pass
+
+        cs = self._get_cloudscraper()
+        if cs:
+            try:
+                r = cs.post(url, data={'View': '1'}, headers=HEADERS, timeout=timeout)
+                if r.status_code == 200 and 'serversList' in r.text:
+                    return r.text
+            except Exception:
+                pass
+        return ''
+
     # ------------------------------------------------------------------ #
     #  Search
     # ------------------------------------------------------------------ #
@@ -268,6 +296,11 @@ class EgyDeadAPI:
         for url, hover_title in re.findall(pattern, markdown):
             url = url.rstrip('/') + '/'
 
+            # Search pages include the whole navigation in their markdown.
+            # Real result cards are the links that have poster thumbnails.
+            if thumb_map and url not in thumb_map:
+                continue
+
             slug = url.rstrip('/').split('/')[-1]
             if hover_title:
                 name = hover_title.strip()
@@ -288,7 +321,7 @@ class EgyDeadAPI:
             if name and url not in seen and not skip:
                 seen.add(url)
                 ctype = 'movie'
-                if '/series/' in url:    ctype = 'series'
+                if '/series/' in url or '/serie/' in url: ctype = 'series'
                 elif '/season/' in url:  ctype = 'season'
                 elif '/episode/' in url: ctype = 'episode'
 
@@ -461,9 +494,12 @@ class EgyDeadAPI:
             except Exception:
                 pass
 
-        # Attempt 4: Direct fetch with curl_cffi (if Firecrawl failed)
+        # Attempt 4: Submit the site's View=1 form. A normal GET only exposes
+        # the trailer; the POST renders the actual watch/download servers.
         if not servers and not direct_urls:
-            _, html = self._fetch(content_url, timeout=15)
+            html = self._fetch_watch_page(content_url, timeout=15)
+            if not html:
+                _, html = self._fetch(content_url, timeout=15)
             if html:
                 s2, d2, u2 = self._extract_from_html(html)
                 if s2 or u2:
@@ -535,6 +571,7 @@ class EgyDeadAPI:
             embed_urls = [
                 src for src in all_iframes
                 if any(h in src.lower() for h in VIDEO_HOSTS)
+                and not any(h in src.lower() for h in TRAILER_HOSTS)
                 and 'recaptcha' not in src
                 and 'facebook.com/plugins' not in src
             ]
@@ -555,6 +592,7 @@ class EgyDeadAPI:
             embed_urls = [
                 src for src in sanitized
                 if any(h in src.lower() for h in VIDEO_HOSTS)
+                and not any(h in src.lower() for h in TRAILER_HOSTS)
                 and 'recaptcha' not in src
             ]
             for i, url in enumerate(embed_urls[:5]):
@@ -569,7 +607,11 @@ class EgyDeadAPI:
         # 6. data-src fallback
         if not servers and not direct_urls:
             ds = re.findall(r'data-src=["\']([^"\']+)["\']', html, re.IGNORECASE)
-            embed_urls = [u for u in ds if any(h in u.lower() for h in VIDEO_HOSTS)]
+            embed_urls = [
+                u for u in ds
+                if any(h in u.lower() for h in VIDEO_HOSTS)
+                and not any(h in u.lower() for h in TRAILER_HOSTS)
+            ]
             for i, url in enumerate(embed_urls[:5]):
                 servers.append({'name': f'Server {i+1}', 'url': url})
 

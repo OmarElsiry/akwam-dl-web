@@ -10,7 +10,8 @@ const state = {
     favorites:     [],
     modalHistory:  [],
     storageKey:    'vortexFavorites',
-    activeItem:    null       // Track currently active item for sharing
+    activeItem:    null,      // Track currently active item for sharing
+    lastFocus:     null
 };
 
 // ============================================================
@@ -64,16 +65,101 @@ function updateBranding() {
 }
 updateBranding();
 
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    })[char]);
+}
+
+function safeRemoteUrl(value) {
+    try {
+        const url = new URL(value, window.location.origin);
+        return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function playableServers(servers) {
+    return (servers || []).map((server, index) => ({
+        name: String(server.name || `Server ${index + 1}`),
+        url: safeRemoteUrl(server.embed_url || server.url),
+    })).filter(server => server.url);
+}
+
+function renderPlayerFrame(id, url, title, fallback = '') {
+    return `<div class="embed-frame-wrap">
+        <iframe id="${escapeHtml(id)}" src="${escapeHtml(url)}" title="${escapeHtml(title)}"
+            sandbox="allow-scripts allow-same-origin allow-presentation"
+            allow="autoplay; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="origin"></iframe>
+        ${fallback}
+    </div>`;
+}
+
+function switchPlayerServer(btn, frameId) {
+    const src = safeRemoteUrl(btn.dataset.src);
+    if (!src) return;
+    const row = btn.closest('.server-row');
+    row?.querySelectorAll('.server-btn, .server-btn-wrap').forEach(element => element.classList.remove('active'));
+    (btn.closest('.server-btn-wrap') || btn).classList.add('active');
+    const frame = document.getElementById(frameId);
+    if (frame) frame.src = src;
+}
+
+function renderEmptyState(kind = 'ready') {
+    const states = {
+        ready: ['01', 'Ready when you are.', 'Search for a movie or series above. You can switch sources at any time.'],
+        empty: ['00', 'Nothing matched that title.', 'Check the spelling or try another source.'],
+        error: ['!', 'This source did not respond.', 'Try the search again or choose another source.']
+    };
+    const [index, title, message] = states[kind] || states.ready;
+    dom.resultsGrid.innerHTML = `<div class="empty-state empty-state-${kind}"><span class="empty-index">${index}</span><div><h3>${title}</h3><p>${message}</p></div></div>`;
+}
+
+function prepareInteractiveRows(root) {
+    root.querySelectorAll('.result-item, .drawer-item, .list-item').forEach(element => {
+        if (element.matches('button, a[href]')) return;
+        if (element.dataset.keyboardReady) return;
+        element.dataset.keyboardReady = 'true';
+        element.tabIndex = 0;
+        element.setAttribute('role', 'button');
+        if (!element.hasAttribute('aria-label')) {
+            const label = element.querySelector('h3, h4')?.textContent?.trim();
+            if (label) element.setAttribute('aria-label', label);
+        }
+        element.addEventListener('keydown', event => {
+            if (event.target !== element || !['Enter', ' '].includes(event.key)) return;
+            event.preventDefault();
+            element.click();
+        });
+    });
+}
+
+const interactiveObserver = new MutationObserver(() => {
+    prepareInteractiveRows(dom.resultsGrid);
+    prepareInteractiveRows(dom.modalList);
+    prepareInteractiveRows(dom.favoritesList);
+});
+[dom.resultsGrid, dom.modalList, dom.favoritesList].forEach(root => {
+    interactiveObserver.observe(root, { childList: true, subtree: true });
+});
+prepareInteractiveRows(document);
+
 // ============================================================
 //  Provider Switch
 // ============================================================
 dom.providerOpts.forEach(opt => {
     opt.onclick = () => {
-        dom.providerOpts.forEach(o => o.classList.remove('active'));
+        dom.providerOpts.forEach(o => {
+            o.classList.remove('active');
+            o.setAttribute('aria-pressed', 'false');
+        });
         opt.classList.add('active');
+        opt.setAttribute('aria-pressed', 'true');
+        showLoading(false);
         state.provider = opt.dataset.value;
         state.results = [];
-        dom.resultsGrid.innerHTML = '';
+        renderEmptyState('ready');
         // Show/hide type switch – only Akwam needs movie/series filter
         dom.typeWrapper.style.display = state.provider === 'akwam' ? '' : 'none';
         if (state.provider === 'egydead') {
@@ -86,10 +172,15 @@ dom.providerOpts.forEach(opt => {
             dom.searchInput.placeholder = 'Search (browse works best — search is limited)…';
             showLoading(true);
             royaldramaHome().then(items => {
+                if (state.provider !== 'royaldrama') return;
                 state.results = items;
                 renderResults(items, 'royaldrama');
                 showLoading(false);
-            }).catch(() => showLoading(false));
+            }).catch(() => {
+                if (state.provider !== 'royaldrama') return;
+                showLoading(false);
+                renderEmptyState('error');
+            });
         } else if (state.provider === 'sahid4u') {
             dom.searchInput.placeholder = 'Search movies, series…';
         } else {
@@ -103,11 +194,15 @@ dom.providerOpts.forEach(opt => {
 // ============================================================
 dom.switchOpts.forEach(opt => {
     opt.onclick = () => {
-        dom.switchOpts.forEach(o => o.classList.remove('active'));
+        dom.switchOpts.forEach(o => {
+            o.classList.remove('active');
+            o.setAttribute('aria-pressed', 'false');
+        });
         opt.classList.add('active');
+        opt.setAttribute('aria-pressed', 'true');
         state.type = opt.dataset.value;
         state.results = [];
-        dom.resultsGrid.innerHTML = '';
+        renderEmptyState('ready');
     };
 });
 const activeOpt = Array.from(dom.switchOpts).find(o => o.classList.contains('active'));
@@ -198,6 +293,7 @@ async function wecimaHomepage(tab) {
 //  API helpers — Sahid4u (hybrid: server API primary, client worker fallback)
 // ============================================================
 async function sahid4uSearch(query) {
+    let serverUnavailable = false;
     try {
         const res = await fetch(`/api/sahid4u/search?q=${encodeURIComponent(query)}`, {
             signal: AbortSignal.timeout(10000),
@@ -205,11 +301,12 @@ async function sahid4uSearch(query) {
         if (res.ok) {
             const data = await res.json();
             if (data.results && data.results.length > 0) return data;
-        }
+        } else serverUnavailable = true;
     } catch (e) {
-        console.warn('[Sahid4u] Server search failed, falling back to client worker:', e);
+        serverUnavailable = true;
     }
     const results = await Sahid4uWorker.search(query);
+    if (serverUnavailable && results.length === 0) throw new Error('Sahid4u is unavailable');
     return { results };
 }
 async function sahid4uGetSeasons(url) {
@@ -289,22 +386,31 @@ async function egyDeadGetWatch(url) {
 // ============================================================
 //  Loading helpers
 // ============================================================
-function showLoading(v)      { dom.loading.style.display = v ? 'flex' : 'none'; }
+function showLoading(v) {
+    dom.loading.style.display = v ? 'flex' : 'none';
+    dom.resultsGrid.setAttribute('aria-busy', String(v));
+    dom.searchBtn.disabled = v;
+    dom.searchBtn.textContent = v ? 'Searching…' : 'Search';
+}
 function showModalLoading(v) { dom.modalLoading.style.display = v ? 'flex' : 'none'; }
 
 // ============================================================
 //  Modal helpers
 // ============================================================
 function openModal(title, showBack = false, wideVideo = false) {
+    if (dom.overlay.style.display !== 'flex') state.lastFocus = document.activeElement;
     dom.modalTitle.innerText = title;
     dom.modalList.innerHTML  = '';
     dom.finalUrl.style.display = 'none';
     dom.overlay.style.display  = 'flex';
+    dom.overlay.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('is-locked');
     dom.modalBackBtn.style.display = showBack ? 'flex' : 'none';
     dom.shareModalBtn.style.display = state.activeItem ? 'flex' : 'none';
     // Wide mode for video embeds
     if (wideVideo) dom.mainModal.classList.add('modal-wide');
     else           dom.mainModal.classList.remove('modal-wide');
+    requestAnimationFrame(() => dom.closeModal.focus());
 }
 
 function closeModal() {
@@ -312,20 +418,15 @@ function closeModal() {
     state.activeItem = null;
     dom.shareModalBtn.style.display = 'none';
     // Stop any playing video/iframe before closing
-    const egyFrame = document.getElementById('egyDeadFrame');
-    if (egyFrame) egyFrame.src = 'about:blank';
-    const wecimaFrame = document.getElementById('wecimaFrame');
-    if (wecimaFrame) wecimaFrame.src = 'about:blank';
-    const faselhdFrame = document.getElementById('faselhdFrame');
-    if (faselhdFrame) faselhdFrame.src = 'about:blank';
-    const sahid4uFrame = document.getElementById('sahid4uFrame');
-    if (sahid4uFrame) sahid4uFrame.src = 'about:blank';
-    const royalFrame = document.getElementById('royaldramaFrame');
-    if (royalFrame) royalFrame.src = 'about:blank';
+    dom.mainModal.querySelectorAll('iframe').forEach(frame => { frame.src = 'about:blank'; });
     const video = dom.mainModal.querySelector('video');
     if (video) { video.pause(); video.src = ''; }
     dom.overlay.style.display = 'none';
+    dom.overlay.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('is-locked');
     dom.mainModal.classList.remove('modal-wide');
+    if (state.lastFocus?.focus) state.lastFocus.focus();
+    state.lastFocus = null;
 }
 
 dom.modalBackBtn.onclick = () => {
@@ -336,15 +437,63 @@ dom.modalBackBtn.onclick = () => {
 };
 dom.closeModal.onclick = closeModal;
 
-// Donation modal
-if (dom.donateBtn)     dom.donateBtn.onclick    = () => dom.donationOverlay.classList.add('active');
-if (dom.closeDonation) dom.closeDonation.onclick = () => dom.donationOverlay.classList.remove('active');
+function openDonation() {
+    state.lastFocus = document.activeElement;
+    dom.donationOverlay.classList.add('active');
+    dom.donationOverlay.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('is-locked');
+    requestAnimationFrame(() => dom.closeDonation.focus());
+}
+
+function closeDonation() {
+    dom.donationOverlay.classList.remove('active');
+    dom.donationOverlay.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('is-locked');
+    if (state.lastFocus?.focus) state.lastFocus.focus();
+    state.lastFocus = null;
+}
+
+if (dom.donateBtn)     dom.donateBtn.onclick = openDonation;
+if (dom.closeDonation) dom.closeDonation.onclick = closeDonation;
 
 // Click-outside to close
 window.addEventListener('click', e => {
     if (e.target === dom.overlay)         closeModal();
     if (e.target === dom.drawerOverlay)   closeDrawer();
-    if (e.target === dom.donationOverlay) dom.donationOverlay.classList.remove('active');
+    if (e.target === dom.donationOverlay) closeDonation();
+});
+
+document.addEventListener('keydown', event => {
+    const donationOpen = dom.donationOverlay.classList.contains('active');
+    const drawerOpen = dom.drawer.classList.contains('active');
+    const modalOpen = dom.overlay.style.display === 'flex';
+
+    if (event.key === 'Escape') {
+        if (donationOpen) closeDonation();
+        else if (drawerOpen) closeDrawer();
+        else if (modalOpen) closeModal();
+        return;
+    }
+
+    if (event.key !== 'Tab') return;
+    const panel = donationOpen ? dom.donationOverlay.querySelector('.modal')
+        : drawerOpen ? dom.drawer
+        : modalOpen ? dom.mainModal
+        : null;
+    if (!panel) return;
+
+    const focusable = Array.from(panel.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), a[href], [tabindex="0"]'))
+        .filter(element => element.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
 });
 
 // Clipboard
@@ -360,8 +509,29 @@ window.copyToClipboard = async (text, btn) => {
 // ============================================================
 //  Favorites Drawer
 // ============================================================
-function openDrawer()  { renderFavorites(); dom.drawer.classList.add('active'); dom.drawerOverlay.classList.add('active'); }
-function closeDrawer() { dom.drawer.classList.remove('active'); dom.drawerOverlay.classList.remove('active'); }
+function openDrawer() {
+    state.lastFocus = document.activeElement;
+    renderFavorites();
+    dom.drawer.classList.add('active');
+    dom.drawerOverlay.classList.add('active');
+    dom.drawer.inert = false;
+    dom.drawer.setAttribute('aria-hidden', 'false');
+    dom.drawerOverlay.setAttribute('aria-hidden', 'false');
+    dom.favoritesBtn.setAttribute('aria-expanded', 'true');
+    document.body.classList.add('is-locked');
+    requestAnimationFrame(() => dom.closeDrawer.focus());
+}
+function closeDrawer() {
+    dom.drawer.classList.remove('active');
+    dom.drawerOverlay.classList.remove('active');
+    dom.drawer.inert = true;
+    dom.drawer.setAttribute('aria-hidden', 'true');
+    dom.drawerOverlay.setAttribute('aria-hidden', 'true');
+    dom.favoritesBtn.setAttribute('aria-expanded', 'false');
+    document.body.classList.remove('is-locked');
+    if (state.lastFocus?.focus) state.lastFocus.focus();
+    state.lastFocus = null;
+}
 
 dom.favoritesBtn.onclick = openDrawer;
 dom.closeDrawer.onclick  = closeDrawer;
@@ -382,11 +552,19 @@ function toggleFavorite(item, type) {
 function renderResults(results, type) {
     dom.resultsGrid.innerHTML = '';
     if (!results || results.length === 0) {
-        dom.resultsGrid.innerHTML = '<p style="text-align:center;grid-column:1/-1;color:var(--text-secondary);padding:2rem;">No results found.</p>';
+        renderEmptyState('empty');
         return;
     }
 
-    results.forEach(item => {
+    const seen = new Set();
+    const uniqueResults = results.filter(item => {
+        const key = item.url || `${item.source || type}:${item.name || ''}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+
+    uniqueResults.forEach(item => {
         const isFav = state.favorites.some(f => f.url === item.url);
         const isEgyDead = item.source === 'egydead';
         const isWecima = item.source === 'wecima';
@@ -411,32 +589,47 @@ function renderResults(results, type) {
         }
 
         // Thumbnail for external source results
-        const posterUrl = isEgyDead ? item.thumbnail : (item.poster || item.thumbnail || null);
+        const posterUrl = safeRemoteUrl(isEgyDead ? item.thumbnail : (item.poster || item.thumbnail || ''));
         const thumbUrl = posterUrl ? (isEgyDead || isWecima ? `https://corsproxy.io/?${encodeURIComponent(posterUrl)}` : posterUrl) : null;
+        const itemName = escapeHtml(item.name || 'Untitled');
+        const safeBadgeText = escapeHtml(badgeText);
         const thumbHtml = thumbUrl
-            ? `<div class="result-thumb"><img src="${thumbUrl}" alt="" loading="lazy"></div>`
+            ? `<div class="result-thumb"><img src="${escapeHtml(thumbUrl)}" alt="Poster for ${itemName}" width="102" height="142" loading="lazy"></div>`
             : '';
 
-        const div = document.createElement('div');
+        const shell = document.createElement('div');
+        shell.className = 'result-card-shell';
+        const div = document.createElement('button');
+        div.type = 'button';
         div.className = 'result-item' + (thumbHtml ? ' has-thumb' : '');
+        div.setAttribute('aria-label', `Open ${item.name || 'title'}`);
         div.innerHTML = `
             ${thumbHtml}
             <div class="result-info">
                 <div class="result-header">
                     <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
                         ${sourceTag}
-                        <span class="${badgeClass}">${badgeText}</span>
+                        <span class="${badgeClass}">${safeBadgeText}</span>
                     </div>
-                    <button class="fav-toggle ${isFav ? 'active' : ''}" title="${isFav ? 'Remove from Favorites' : 'Add to Favorites'}">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="${isFav ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-                    </button>
                 </div>
-                <h3>${item.name}</h3>
+                <h3 dir="auto">${itemName}</h3>
             </div>
         `;
-        div.querySelector('.fav-toggle').onclick = e => { e.stopPropagation(); toggleFavorite(item, badgeText); };
+        const fav = document.createElement('button');
+        fav.className = `fav-toggle ${isFav ? 'active' : ''}`;
+        fav.title = isFav ? 'Remove from favorites' : 'Add to favorites';
+        fav.setAttribute('aria-label', fav.title);
+        fav.setAttribute('aria-pressed', String(isFav));
+        fav.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="${isFav ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>`;
+        const poster = div.querySelector('.result-thumb img');
+        poster?.addEventListener('error', () => {
+            poster.parentElement.remove();
+            div.classList.remove('has-thumb');
+        }, { once: true });
+        fav.onclick = () => toggleFavorite(item, badgeText);
         div.onclick = () => { state.modalHistory = []; handleItemClick(item, badgeText); };
-        dom.resultsGrid.appendChild(div);
+        shell.append(div, fav);
+        dom.resultsGrid.appendChild(shell);
     });
 }
 
@@ -466,20 +659,27 @@ function renderFavorites() {
         } else {
             sourceTag = '<span class="source-badge source-akwam">Akwam</span>';
         }
-        const div = document.createElement('div');
+        const shell = document.createElement('div');
+        shell.className = 'drawer-item-shell';
+        const div = document.createElement('button');
+        div.type = 'button';
         div.className = 'drawer-item';
+        div.setAttribute('aria-label', `Open ${item.name || 'title'}`);
         div.innerHTML = `
             <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-                <div style="display:flex;gap:0.4rem;">${sourceTag}<span class="type-badge">${item.type}</span></div>
-                <button class="fav-toggle active" style="padding:0;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-                </button>
+                <div style="display:flex;gap:0.4rem;">${sourceTag}<span class="type-badge">${escapeHtml(item.type)}</span></div>
             </div>
-            <h4>${item.name}</h4>
+            <h4 dir="auto">${escapeHtml(item.name || 'Untitled')}</h4>
         `;
-        div.querySelector('.fav-toggle').onclick = e => { e.stopPropagation(); toggleFavorite(item, item.type); };
+        const fav = document.createElement('button');
+        fav.className = 'fav-toggle active';
+        fav.setAttribute('aria-label', 'Remove from favorites');
+        fav.setAttribute('aria-pressed', 'true');
+        fav.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>';
+        fav.onclick = () => toggleFavorite(item, item.type);
         div.onclick = () => { closeDrawer(); state.modalHistory = []; handleItemClick(item, item.type); };
-        dom.favoritesList.appendChild(div);
+        shell.append(div, fav);
+        dom.favoritesList.appendChild(shell);
     });
 }
 
@@ -555,7 +755,6 @@ async function handleAkwamClick(item, type, isBackAction = false) {
         });
         dom.modalList.appendChild(gridDiv);
     } else {
-        state.modalHistory.push(() => closeModal());
         handleQualitySelect(item.url);
     }
 }
@@ -870,7 +1069,7 @@ async function egyDeadShowWatch(item) {
 }
 
 function egyDeadRenderWatch(data, item) {
-    const servers    = data.servers    || [];
+    const servers    = playableServers(data.servers);
     const directUrls = data.direct_urls || [];
     const downloads  = data.downloads  || [];
 
@@ -882,7 +1081,7 @@ function egyDeadRenderWatch(data, item) {
         let serverBtns = '';
         if (servers.length > 1) {
             serverBtns = servers.map((s, i) =>
-                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${s.url}" onclick="egyDeadSwitchServer(this)">${s.name}</button>`
+                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${escapeHtml(s.url)}" onclick="egyDeadSwitchServer(this)">${escapeHtml(s.name)}</button>`
             ).join('');
         }
 
@@ -928,11 +1127,7 @@ function egyDeadRenderWatch(data, item) {
         dom.modalList.innerHTML = `
             <div class="watch-container">
                 ${serverBtns ? `<div class="server-row">${serverBtns}</div>` : ''}
-                <div class="embed-frame-wrap">
-                    <iframe id="egyDeadFrame" src="${servers[0].url}"
-                        frameborder="0" allowfullscreen allow="autoplay; fullscreen">
-                    </iframe>
-                </div>
+                ${renderPlayerFrame('egyDeadFrame', servers[0].url, `EgyDead — ${servers[0].name}`)}
                 ${downloadsHtml}
                 <a href="${item.url}" target="_blank" class="btn-secondary btn-open-page">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
@@ -998,10 +1193,7 @@ function egyDeadRenderWatch(data, item) {
 
 // Switch embed server
 window.egyDeadSwitchServer = btn => {
-    document.querySelectorAll('.server-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    const frame = document.getElementById('egyDeadFrame');
-    if (frame) frame.src = btn.dataset.src;
+    switchPlayerServer(btn, 'egyDeadFrame');
 };
 
 // ============================================================
@@ -1098,7 +1290,7 @@ async function faselhdShowDetail(item) {
     }
     showModalLoading(false);
 
-    const servers = (detail && detail.servers) || [];
+    const servers = playableServers(detail && detail.servers);
     const downloads = (detail && detail.downloads) || [];
     const name = (detail && detail.title) || item.name;
 
@@ -1108,8 +1300,8 @@ async function faselhdShowDetail(item) {
     if (servers.length > 0) {
         let serverBtns = '';
         if (servers.length > 1) {
-                    serverBtns = servers.map((s, i) =>
-                        `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${s.embed_url || s.url}" onclick="faselhdSwitchServer(this)">${s.name || 'Server ' + (i+1)}</button>`
+            serverBtns = servers.map((s, i) =>
+                        `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${escapeHtml(s.url)}" onclick="faselhdSwitchServer(this)">${escapeHtml(s.name || `Server ${i + 1}`)}</button>`
                     ).join('');
         }
 
@@ -1133,11 +1325,7 @@ async function faselhdShowDetail(item) {
         dom.modalList.innerHTML = `
             <div class="watch-container">
                 ${serverBtns ? `<div class="server-row">${serverBtns}</div>` : ''}
-                <div class="embed-frame-wrap">
-                    <iframe id="faselhdFrame" src="${servers[0].embed_url || servers[0].url}"
-                        frameborder="0" allowfullscreen allow="autoplay; fullscreen">
-                    </iframe>
-                </div>
+                ${renderPlayerFrame('faselhdFrame', servers[0].url, `FaselHD — ${servers[0].name}`)}
                 ${downloadsHtml}
             </div>`;
     } else if (downloads.length > 0) {
@@ -1165,10 +1353,7 @@ async function faselhdShowDetail(item) {
 }
 
 window.faselhdSwitchServer = btn => {
-    document.querySelectorAll('.server-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    const frame = document.getElementById('faselhdFrame');
-    if (frame) frame.src = btn.dataset.src;
+    switchPlayerServer(btn, 'faselhdFrame');
 };
 
 // ============================================================
@@ -1262,7 +1447,7 @@ async function wecimaShowDetail(item) {
     showModalLoading(false);
 
     const metadata = data.metadata || {};
-    const servers = data.servers || [];
+    const servers = playableServers(data.servers);
     const downloads = data.downloads || [];
     const name = metadata.name || item.name;
 
@@ -1274,10 +1459,10 @@ async function wecimaShowDetail(item) {
     if (servers.length > 0) {
         serverBtns = servers.map((s, i) => `
             <div class="server-btn-wrap ${i === 0 ? 'active' : ''}">
-                <button class="server-btn" data-src="${s.url}" onclick="wecimaSwitchServer(this)">
-                    ${s.name}
+                <button class="server-btn" data-src="${escapeHtml(s.url)}" onclick="wecimaSwitchServer(this)">
+                    ${escapeHtml(s.name)}
                 </button>
-                <a href="${s.url}" target="_blank" rel="noopener noreferrer" class="server-ext-link" title="Open in new tab">
+                <a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer" class="server-ext-link" title="Open in new tab">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                 </a>
             </div>
@@ -1306,17 +1491,13 @@ async function wecimaShowDetail(item) {
         dom.modalList.innerHTML = `
             <div class="watch-container">
                 <div class="server-row" style="flex-wrap:wrap;gap:0.35rem;">${serverBtns}</div>
-                <div class="embed-frame-wrap">
-                    <iframe id="wecimaFrame" src="${servers[0].url}"
-                        frameborder="0" allowfullscreen allow="autoplay; fullscreen">
-                    </iframe>
+                ${renderPlayerFrame('wecimaFrame', servers[0].url, `Wecima — ${servers[0].name}`, `
                     <div id="wecimaFrameFallback" style="display:none;text-align:center;padding:3rem;">
                         <p style="color:var(--text-secondary);margin-bottom:1rem;">The embed player didn't load. Try opening it directly.</p>
-                        <a href="${servers[0].url}" target="_blank" class="btn-primary" style="text-decoration:none;display:inline-block;">
+                        <a href="${escapeHtml(servers[0].url)}" target="_blank" rel="noopener noreferrer" class="btn-primary" style="text-decoration:none;display:inline-block;">
                             OPEN IN NEW TAB
                         </a>
-                    </div>
-                </div>
+                    </div>`)}
                 ${downloadsHtml}
             </div>`;
 
@@ -1355,13 +1536,11 @@ async function wecimaShowDetail(item) {
 }
 
 window.wecimaSwitchServer = btn => {
-    document.querySelectorAll('.server-btn-wrap').forEach(w => w.classList.remove('active'));
-    btn.closest('.server-btn-wrap').classList.add('active');
+    switchPlayerServer(btn, 'wecimaFrame');
     const frame = document.getElementById('wecimaFrame');
     const fallback = document.getElementById('wecimaFrameFallback');
     if (frame) {
         frame.style.display = 'block';
-        frame.src = btn.dataset.src;
         if (fallback) fallback.style.display = 'none';
         // Update fallback link
         const fallbackLink = fallback?.querySelector('a');
@@ -1445,7 +1624,7 @@ async function sahid4uShowWatch(item) {
     const data = await sahid4uGetWatchDownload(item.url);
     showModalLoading(false);
 
-    const servers = data.servers || [];
+    const servers = playableServers(data.servers);
     const qualities = data.qualities || [];
 
     dom.mainModal.classList.add('modal-wide');
@@ -1455,7 +1634,7 @@ async function sahid4uShowWatch(item) {
     let serverBtns = '';
     if (servers.length > 1) {
         serverBtns = servers.map((s, i) =>
-            `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${s.url}" onclick="sahid4uSwitchServer(this)">${s.name}</button>`
+            `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${escapeHtml(s.url)}" onclick="sahid4uSwitchServer(this)">${escapeHtml(s.name)}</button>`
         ).join('');
     }
 
@@ -1480,11 +1659,7 @@ async function sahid4uShowWatch(item) {
         dom.modalList.innerHTML = `
             <div class="watch-container">
                 ${serverBtns ? `<div class="server-row">${serverBtns}</div>` : ''}
-                <div class="embed-frame-wrap">
-                    <iframe id="sahid4uFrame" src="${servers[0].url}"
-                        frameborder="0" allowfullscreen allow="autoplay; fullscreen">
-                    </iframe>
-                </div>
+                ${renderPlayerFrame('sahid4uFrame', servers[0].url, `Sahid4u — ${servers[0].name}`)}
                 ${qualitiesHtml}
                 <a href="${item.url}" target="_blank" class="btn-secondary btn-open-page">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
@@ -1509,10 +1684,7 @@ async function sahid4uShowWatch(item) {
 }
 
 window.sahid4uSwitchServer = btn => {
-    document.querySelectorAll('.server-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    const frame = document.getElementById('sahid4uFrame');
-    if (frame) frame.src = btn.dataset.src;
+    switchPlayerServer(btn, 'sahid4uFrame');
 };
 
 // ============================================================
@@ -1568,10 +1740,18 @@ async function royaldramaShowDetail(item) {
     const name = meta.name || item.name;
     const poster = meta.poster || '';
     const episodes = data.episodes || [];
+    const isEpisode = item.type === 'episode';
     const isSeries = data.type === 'series' && episodes.length > 0;
 
     dom.mainModal.classList.add('modal-wide');
     dom.modalTitle.innerText = name;
+
+    // Episode watch pages also contain the parent series episode list. Respect
+    // the searched item and play it directly instead of reopening 100+ rows.
+    if (isEpisode) {
+        royaldramaPlay(item.url, name, poster, data.servers || []);
+        return;
+    }
 
     if (isSeries) {
         royaldramaEpisodes = episodes;
@@ -1621,23 +1801,19 @@ async function royaldramaPlayEpisode(idx) {
     const nextDisabled = idx <= 0 ? 'disabled' : '';
     const prevDisabled = idx >= eps.length - 1 ? 'disabled' : '';
     
-    const servers = data.servers || [];
+    const servers = playableServers(data.servers);
     let serverBtns = '';
     let playerHtml = '';
     
     if (servers.length > 0) {
         if (servers.length > 1) {
             serverBtns = servers.map((s, i) =>
-                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${s.url}" onclick="royaldramaSwitchServer(this)">${s.name}</button>`
+                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${escapeHtml(s.url)}" onclick="royaldramaSwitchServer(this)">${escapeHtml(s.name)}</button>`
             ).join('');
         }
         playerHtml = `
             ${serverBtns ? `<div class="server-row">${serverBtns}</div>` : ''}
-            <div class="embed-frame-wrap">
-                <iframe id="royaldramaFrame" src="${servers[0].url}"
-                    frameborder="0" allowfullscreen allow="autoplay; fullscreen">
-                </iframe>
-            </div>
+            ${renderPlayerFrame('royaldramaFrame', servers[0].url, `Royal Drama — ${servers[0].name}`)}
         `;
     } else {
         playerHtml = `
@@ -1663,6 +1839,7 @@ async function royaldramaPlayEpisode(idx) {
 async function royaldramaPlay(url, name, poster, servers = []) {
     openModal(name || 'Royal Drama', state.modalHistory.length > 0);
     dom.mainModal.classList.add('modal-wide');
+    servers = playableServers(servers);
     
     let serverBtns = '';
     let playerHtml = '';
@@ -1670,16 +1847,12 @@ async function royaldramaPlay(url, name, poster, servers = []) {
     if (servers.length > 0) {
         if (servers.length > 1) {
             serverBtns = servers.map((s, i) =>
-                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${s.url}" onclick="royaldramaSwitchServer(this)">${s.name}</button>`
+                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${escapeHtml(s.url)}" onclick="royaldramaSwitchServer(this)">${escapeHtml(s.name)}</button>`
             ).join('');
         }
         playerHtml = `
             ${serverBtns ? `<div class="server-row">${serverBtns}</div>` : ''}
-            <div class="embed-frame-wrap">
-                <iframe id="royaldramaFrame" src="${servers[0].url}"
-                    frameborder="0" allowfullscreen allow="autoplay; fullscreen">
-                </iframe>
-            </div>
+            ${renderPlayerFrame('royaldramaFrame', servers[0].url, `Royal Drama — ${servers[0].name}`)}
         `;
     } else {
         playerHtml = `
@@ -1698,10 +1871,7 @@ async function royaldramaPlay(url, name, poster, servers = []) {
 }
 
 window.royaldramaSwitchServer = btn => {
-    document.querySelectorAll('.server-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    const frame = document.getElementById('royaldramaFrame');
-    if (frame) frame.src = btn.dataset.src;
+    switchPlayerServer(btn, 'royaldramaFrame');
 };
 
 // ============================================================
@@ -1709,7 +1879,11 @@ window.royaldramaSwitchServer = btn => {
 // ============================================================
 async function doSearch() {
     const q = dom.searchInput.value.trim();
-    if (!q) return;
+    if (!q) {
+        showToast('Enter a title to start searching.', 'warning');
+        dom.searchInput.focus();
+        return;
+    }
 
     showLoading(true);
     dom.resultsGrid.innerHTML = '';
@@ -1742,15 +1916,14 @@ async function doSearch() {
             renderResults(state.results, state.type);
         }
     } catch (e) {
-        console.error(e);
-        dom.resultsGrid.innerHTML = '<p style="text-align:center;grid-column:1/-1;color:var(--danger);padding:2rem;">Search failed. Please retry.</p>';
+        renderEmptyState('error');
     } finally {
         showLoading(false);
     }
 }
 
 dom.searchBtn.onclick = doSearch;
-dom.searchInput.onkeypress = e => { if (e.key === 'Enter') doSearch(); };
+dom.searchInput.onkeydown = e => { if (e.key === 'Enter') doSearch(); };
 
 
 // ============================================================

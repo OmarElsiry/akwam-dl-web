@@ -13,6 +13,7 @@ JavaScript, so a direct stream URL cannot be extracted server-side; the app
 routes the watch URL through the generic /api/resolve-embed pipeline and also
 offers the original site link as a fallback.
 """
+import html as html_lib
 import re
 from curl_cffi import requests as _req
 
@@ -92,13 +93,16 @@ def _parse_grid(html: str, force_type: str | None = None) -> list[dict]:
         html, re.DOTALL,
     ):
         seg = block.group(1)
-        a = re.search(r'<a[^>]*href="([^"]+)"[^>]*title="([^"]*)"', seg)
-        if not a:
-            a = re.search(r'<a[^>]*title="([^"]*)"[^>]*href="([^"]+)"', seg)
-        if not a:
-            continue
-        href = _abs(a.group(1))
-        name = _clean(a.group(2)) or _clean(re.search(r'title="([^"]+)"', seg).group(1) if re.search(r'title="([^"]+)"', seg) else "")
+        anchor = re.search(r'<a[^>]*href="([^"]+)"[^>]*title="([^"]*)"', seg)
+        if anchor:
+            href, title = anchor.groups()
+        else:
+            anchor = re.search(r'<a[^>]*title="([^"]*)"[^>]*href="([^"]+)"', seg)
+            if not anchor:
+                continue
+            title, href = anchor.groups()
+        href = _abs(html_lib.unescape(href))
+        name = _clean(title)
         if not name or "royal-drama.com" in name.lower():
             continue
         if href in seen:
@@ -110,8 +114,9 @@ def _parse_grid(html: str, force_type: str | None = None) -> list[dict]:
         dur_m = re.search(r'pm-label-duration">([^<]+)<', seg)
         duration = _clean(dur_m.group(1)) if dur_m else ""
 
-        is_series = bool(re.search(r'الحلقة|مسلسل|series', name, re.IGNORECASE))
-        ctype = force_type or ("series" if is_series else "movie")
+        is_episode = bool(re.search(r'الحلقة|episode', name, re.IGNORECASE))
+        is_series = bool(re.search(r'مسلسل|series', name, re.IGNORECASE))
+        ctype = force_type or ("episode" if is_episode else "series" if is_series else "movie")
 
         items.append({
             "name": name,

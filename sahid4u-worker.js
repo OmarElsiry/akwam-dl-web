@@ -1,5 +1,5 @@
 const Sahid4uWorker = (() => {
-    const BASE_URL = 'https://sahid4u.com';
+    const BASE_URL = 'https://shhahhid4u.com';
 
     const CORS_PROXIES = [
         (url) => `/api/cors-proxy?url=${encodeURIComponent(url)}`,
@@ -28,6 +28,10 @@ const Sahid4uWorker = (() => {
                     continue;
                 }
                 const text = await resp.text();
+                if (/Just a moment|Attention Required|cf-chl-|challenge-platform/i.test(text)) {
+                    lastError = new Error('Provider challenge page');
+                    continue;
+                }
                 if (workingProxyIndex !== idx) workingProxyIndex = idx;
                 return text;
             } catch (err) {
@@ -204,17 +208,28 @@ const Sahid4uWorker = (() => {
     // ── Watch Servers ────────────────────────────────────────
     async function getWatchServers(watchUrl) {
         const html = await corsFetch(watchUrl);
+        const normalizeServers = (servers) => servers.map((s) => ({
+            name: s.name || 'Server',
+            url: s.url || '',
+            id: s.id,
+        }));
         const rawMatch = html.match(/let\s+rawServers\s*=\s*(\[[\s\S]*?\]);/i);
         if (rawMatch) {
             try {
-                const servers = JSON.parse(rawMatch[1]);
-                return servers.map((s) => ({
-                    name: s.name || 'Server',
-                    url: s.url || '',
-                    id: s.id,
-                }));
+                return normalizeServers(JSON.parse(rawMatch[1]));
             } catch (e) {
                 console.error('[Sahid4uWorker] rawServers parse failed:', e);
+            }
+        }
+        const nestedMatch = html.match(/let\s+servers\s*=\s*JSON\.parse\(\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)')\s*\)\s*;/i);
+        if (nestedMatch) {
+            try {
+                const payload = nestedMatch[1] !== undefined
+                    ? JSON.parse('"' + nestedMatch[1] + '"')
+                    : nestedMatch[2].replace(/\\'/g, "'");
+                return normalizeServers(JSON.parse(payload));
+            } catch (e) {
+                console.error('[Sahid4uWorker] nested servers parse failed:', e);
             }
         }
         const iframeMatch = html.match(/<iframe[^>]+src=["']([^"']+)["']/i);

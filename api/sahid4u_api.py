@@ -10,7 +10,7 @@ we use multiple strategies:
 import re, json, os
 from urllib.parse import unquote
 
-FALLBACK_DOMAIN = "https://sahid4u.com"
+FALLBACK_DOMAIN = "https://shhahhid4u.com"
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -54,7 +54,10 @@ def _fetch(url, timeout=15):
     # Strategy 4: Firecrawl (if available)
     try:
         from firecrawl import Firecrawl
-        fc = Firecrawl(api_key=os.environ.get('FIRECRAWL_API_KEY', 'fc-186b4e776b4042dfa4043a97c4985cc9'))
+        api_key = os.environ.get('FIRECRAWL_API_KEY')
+        if not api_key:
+            raise RuntimeError('FIRECRAWL_API_KEY is not configured')
+        fc = Firecrawl(api_key=api_key)
         result = fc.scrape(url, formats=['markdown', 'html'])
         if result:
             md = getattr(result, 'markdown', '') or ''
@@ -105,12 +108,16 @@ def search(query):
     ql = query.lower()
     seen = set()
     results = []
+    source_reached = False
     q_encoded = query.replace(' ', '+')
 
     # Strategy 1: Firecrawl API (handles Cloudflare)
     try:
         from firecrawl import Firecrawl
-        fc = Firecrawl(api_key=os.environ.get('FIRECRAWL_API_KEY', 'fc-186b4e776b4042dfa4043a97c4985cc9'))
+        api_key = os.environ.get('FIRECRAWL_API_KEY')
+        if not api_key:
+            raise RuntimeError('FIRECRAWL_API_KEY is not configured')
+        fc = Firecrawl(api_key=api_key)
         for url in [
             f'{FALLBACK_DOMAIN}/?s={q_encoded}',
             f'{FALLBACK_DOMAIN}/category-search-api-v2?q={q_encoded}',
@@ -119,6 +126,7 @@ def search(query):
                 result = fc.scrape(url, formats=['html'])
                 html = result.get('html', '') if isinstance(result, dict) else getattr(result, 'html', '') or ''
                 if html:
+                    source_reached = True
                     links = _extract_links(html)
                     for link in links:
                         href = link['href']
@@ -147,6 +155,7 @@ def search(query):
             timeout=15
         )
         if r.status_code == 200:
+            source_reached = True
             html = r.text
             links = _extract_links(html)
             for link in links:
@@ -176,9 +185,11 @@ def search(query):
                 )
                 page = context.new_page()
                 try:
-                    page.goto(f'{FALLBACK_DOMAIN}/?s={q_encoded}', wait_until='domcontentloaded', timeout=20000)
+                    response = page.goto(f'{FALLBACK_DOMAIN}/?s={q_encoded}', wait_until='domcontentloaded', timeout=20000)
                     page.wait_for_timeout(3000)
                     html = page.content()
+                    if response and response.ok and 'Just a moment' not in html:
+                        source_reached = True
                 except Exception:
                     html = ''
                 browser.close()
@@ -198,6 +209,8 @@ def search(query):
         except Exception:
             pass
 
+    if not source_reached:
+        raise RuntimeError('Sahid4u is currently blocking automated access')
     return results
 
 
@@ -335,17 +348,34 @@ def get_content_servers_and_downloads(content_url):
         try:
             html = _fetch(watch_url, timeout=12)
             if html:
+                raw_servers = None
                 m = re.search(r'let\s+rawServers\s*=\s*(\[[\s\S]*?\])\s*;', html, re.IGNORECASE)
                 if m:
                     try:
-                        servers = json.loads(m.group(1))
-                        servers = [{
-                            'name': s.get('name', f'Server {i+1}'),
-                            'url': s.get('url', ''),
-                            'id': s.get('id'),
-                        } for i, s in enumerate(servers)]
+                        raw_servers = json.loads(m.group(1))
                     except json.JSONDecodeError:
                         pass
+                if raw_servers is None:
+                    nested = re.search(
+                        r'''let\s+servers\s*=\s*JSON\.parse\(\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)')\s*\)\s*;''',
+                        html, re.IGNORECASE
+                    )
+                    if nested:
+                        try:
+                            payload = nested.group(1)
+                            if payload is not None:
+                                payload = json.loads(f'"{payload}"')
+                            else:
+                                payload = nested.group(2).replace("\\'", "'")
+                            raw_servers = json.loads(payload)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                if isinstance(raw_servers, list):
+                    servers = [{
+                        'name': s.get('name', f'Server {i+1}'),
+                        'url': s.get('url', ''),
+                        'id': s.get('id'),
+                    } for i, s in enumerate(raw_servers) if isinstance(s, dict)]
                 if not servers:
                     iframes = re.findall(r'<iframe[^>]+src=["\']([^"\']+)["\']', html, re.IGNORECASE)
                     if iframes:
