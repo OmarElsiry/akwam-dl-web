@@ -9,6 +9,12 @@ const Sahid4uWorker = (() => {
 
     let workingProxyIndex = 0;
 
+    function isChallengePage(html) {
+        // A successful page can still include Cloudflare's passive JSD
+        // telemetry script. Only reject markup that represents a real block.
+        return /<title[^>]*>\s*(?:Just a moment|Attention Required)|id=["']cf-error-details["']|class=["'][^"']*(?:cf-turnstile|challenge-form)[^"']*["']|id=["']challenge-(?:form|stage|running)["']/i.test(html || '');
+    }
+
     async function corsFetch(url) {
         let lastError = null;
         const indices = [workingProxyIndex];
@@ -28,7 +34,7 @@ const Sahid4uWorker = (() => {
                     continue;
                 }
                 const text = await resp.text();
-                if (/Just a moment|Attention Required|cf-chl-|challenge-platform/i.test(text)) {
+                if (isChallengePage(text)) {
                     lastError = new Error('Provider challenge page');
                     continue;
                 }

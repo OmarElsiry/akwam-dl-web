@@ -1,5 +1,6 @@
+import html as html_lib
 import re, os, time
-from urllib.parse import unquote
+from urllib.parse import unquote, urljoin, urlparse
 
 FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY")
 
@@ -432,6 +433,11 @@ class EgyDeadAPI:
 
         for link, hover_title in re.findall(pattern, markdown):
             link = link.rstrip('/') + '/'
+            # The global navigation contains category roots such as
+            # ``https://egydead.com/season/`` and ``/episode/``. They match the
+            # path substring but are not playable content entries.
+            if urlparse(link).path.rstrip('/') == type_filter.rstrip('/'):
+                continue
             if hover_title:
                 name = hover_title.strip()
             else:
@@ -462,7 +468,8 @@ class EgyDeadAPI:
                 result = fc.scrape(content_url, formats=['html'])
                 html = result.get('html', '') if isinstance(result, dict) else getattr(result, 'html', '')
                 html = html or ''
-                servers, downloads, direct_urls = self._extract_from_html(html)
+                servers, downloads, direct_urls = self._extract_from_html(
+                    html, content_url)
             except Exception:
                 pass
 
@@ -476,7 +483,8 @@ class EgyDeadAPI:
                 html2 = result.get('html', '') if isinstance(result, dict) else getattr(result, 'html', '')
                 html2 = html2 or ''
                 if html2:
-                    servers, downloads, direct_urls = self._extract_from_html(html2)
+                    servers, downloads, direct_urls = self._extract_from_html(
+                        html2, content_url)
             except Exception:
                 pass
 
@@ -490,7 +498,8 @@ class EgyDeadAPI:
                 html3 = result.get('html', '') if isinstance(result, dict) else getattr(result, 'html', '')
                 html3 = html3 or ''
                 if html3:
-                    servers, downloads, direct_urls = self._extract_from_html(html3)
+                    servers, downloads, direct_urls = self._extract_from_html(
+                        html3, content_url)
             except Exception:
                 pass
 
@@ -501,8 +510,8 @@ class EgyDeadAPI:
             if not html:
                 _, html = self._fetch(content_url, timeout=15)
             if html:
-                s2, d2, u2 = self._extract_from_html(html)
-                if s2 or u2:
+                s2, d2, u2 = self._extract_from_html(html, content_url)
+                if s2 or d2 or u2:
                     servers, downloads, direct_urls = s2, d2, u2
 
         ret = {
@@ -514,7 +523,17 @@ class EgyDeadAPI:
         self._cache[cache_key] = ret
         return ret
 
-    def _extract_from_html(self, html: str):
+    @staticmethod
+    def _normalize_media_url(raw_url: str, page_url: str = '') -> str:
+        """Decode an extracted URL and make site-relative links absolute."""
+        url = html_lib.unescape((raw_url or '').strip())
+        if url.startswith('//'):
+            return f'https:{url}'
+        if page_url:
+            return urljoin(page_url, url)
+        return url
+
+    def _extract_from_html(self, html: str, page_url: str = ''):
         """Extract servers, downloads, and direct URLs from HTML content."""
         servers = []
         downloads = []
@@ -527,7 +546,9 @@ class EgyDeadAPI:
         pattern = r'<li[^>]*data-link=["\']([^"\']+)["\'][^>]*>.*?<p>([^<]+)</p>'
         for match in re.finditer(pattern, html, re.DOTALL | re.IGNORECASE):
             url, name = match.groups()
-            servers.append({'name': name.strip(), 'url': url.strip()})
+            url = self._normalize_media_url(url, page_url)
+            if url.startswith(('http://', 'https://')):
+                servers.append({'name': name.strip(), 'url': url})
 
         # 2. Extract Downloads from "donwload-servers-list"
         dl_block_match = re.search(
@@ -553,7 +574,8 @@ class EgyDeadAPI:
                     downloads.append({
                         'name': name,
                         'quality': qual_m.group(1).strip(),
-                        'url': url_m.group(1).strip()
+                        'url': self._normalize_media_url(
+                            url_m.group(1), page_url)
                     })
 
         # Deduplicate downloads by URL
@@ -576,7 +598,10 @@ class EgyDeadAPI:
                 and 'facebook.com/plugins' not in src
             ]
             for i, url in enumerate(embed_urls[:5]):
-                servers.append({'name': f'Server {i+1}', 'url': url})
+                servers.append({
+                    'name': f'Server {i+1}',
+                    'url': self._normalize_media_url(url, page_url),
+                })
 
         # 4. Sanitized iframe divs
         if not servers:
@@ -596,13 +621,25 @@ class EgyDeadAPI:
                 and 'recaptcha' not in src
             ]
             for i, url in enumerate(embed_urls[:5]):
-                servers.append({'name': f'Server {i+1}', 'url': url})
+                servers.append({
+                    'name': f'Server {i+1}',
+                    'url': self._normalize_media_url(url, page_url),
+                })
 
         # 5. Direct video files
-        direct_urls = list(dict.fromkeys(re.findall(
-            r'(https?://[^\s"\'<>]+\.(?:mp4|m3u8|mkv)[^\s"\'<>]*)',
-            html
-        )))
+        # Require the media extension to terminate the URL path. Without this
+        # boundary, download landing pages such as ``video.mp4.html`` are
+        # incorrectly handed to the browser as direct video streams.
+        direct_urls = [
+            self._normalize_media_url(url, page_url)
+            for url in dict.fromkeys(re.findall(
+                r'(https?://[^\s"\'<>]+?\.(?:mp4|m3u8|mkv)'
+                r'(?:[?#][^\s"\'<>]*)?)'
+                r'(?=[\s"\'<>]|$)',
+                html,
+                re.IGNORECASE,
+            ))
+        ]
 
         # 6. data-src fallback
         if not servers and not direct_urls:
@@ -613,7 +650,10 @@ class EgyDeadAPI:
                 and not any(h in u.lower() for h in TRAILER_HOSTS)
             ]
             for i, url in enumerate(embed_urls[:5]):
-                servers.append({'name': f'Server {i+1}', 'url': url})
+                servers.append({
+                    'name': f'Server {i+1}',
+                    'url': self._normalize_media_url(url, page_url),
+                })
 
         return servers, downloads, direct_urls
 

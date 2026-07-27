@@ -89,11 +89,45 @@ function playableServers(servers) {
 
 function renderPlayerFrame(id, url, title, fallback = '') {
     return `<div class="embed-frame-wrap">
-        <iframe id="${escapeHtml(id)}" src="${escapeHtml(url)}" title="${escapeHtml(title)}"
-            sandbox="allow-scripts allow-same-origin allow-presentation"
-            allow="autoplay; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="origin"></iframe>
+        <div class="embed-frame-stage">
+            <iframe id="${escapeHtml(id)}" src="${escapeHtml(url)}" title="${escapeHtml(title)}"
+                sandbox="allow-scripts allow-same-origin allow-presentation"
+                allow="autoplay; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="origin"></iframe>
+        </div>
+        <div class="player-resolve-tools" style="display:flex;align-items:center;justify-content:center;gap:.65rem;flex-wrap:wrap;padding:.65rem;">
+            <button type="button" class="btn-secondary btn-sm player-resolve-btn"
+                data-frame-id="${escapeHtml(id)}" data-src="${escapeHtml(url)}"
+                onclick="window.vortexResolvePlayerStream(this)">PLAY DIRECT</button>
+            <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer"
+                class="btn-secondary btn-sm player-open-link" style="text-decoration:none;">OPEN HOST</a>
+            <span class="player-resolve-status" role="status" style="color:var(--text-secondary);font-size:.78rem;"></span>
+        </div>
         ${fallback}
     </div>`;
+}
+
+function teardownPlayerVideo(video) {
+    if (!video) return;
+    video._tearingDown = true;
+    clearTimeout(video._playbackTimer);
+    video._playbackTimer = null;
+    if (video._hls) {
+        try { video._hls.destroy(); } catch (_) { /* Best-effort player cleanup. */ }
+        video._hls = null;
+    }
+    try { video.pause(); } catch (_) { /* Detached media can reject pause. */ }
+    video.removeAttribute('src');
+    video.querySelectorAll('source').forEach(source => source.removeAttribute('src'));
+}
+
+function teardownPlayerContent(root = dom.mainModal) {
+    if (!root) return;
+    root.querySelectorAll('.embed-frame-wrap').forEach(wrap => {
+        if (wrap._resolveController) wrap._resolveController.abort();
+        wrap._resolveController = null;
+    });
+    root.querySelectorAll('video').forEach(teardownPlayerVideo);
+    root.querySelectorAll('iframe').forEach(frame => { frame.src = 'about:blank'; });
 }
 
 function switchPlayerServer(btn, frameId) {
@@ -103,8 +137,154 @@ function switchPlayerServer(btn, frameId) {
     row?.querySelectorAll('.server-btn, .server-btn-wrap').forEach(element => element.classList.remove('active'));
     (btn.closest('.server-btn-wrap') || btn).classList.add('active');
     const frame = document.getElementById(frameId);
-    if (frame) frame.src = src;
+    if (frame) {
+        const directVideo = frame.parentElement?.querySelector('video.player-direct-video');
+        if (directVideo) {
+            teardownPlayerVideo(directVideo);
+            directVideo.remove();
+        }
+        frame.style.display = '';
+        frame.src = src;
+        const wrap = frame.closest('.embed-frame-wrap');
+        if (wrap?._resolveController) wrap._resolveController.abort();
+        if (wrap) wrap._resolveController = null;
+        const resolveBtn = wrap?.querySelector('.player-resolve-btn');
+        const openLink = wrap?.querySelector('.player-open-link');
+        const status = wrap?.querySelector('.player-resolve-status');
+        if (resolveBtn) {
+            resolveBtn.dataset.src = src;
+            resolveBtn.disabled = false;
+        }
+        if (openLink) openLink.href = src;
+        if (status) status.textContent = '';
+    }
 }
+
+let hlsLibraryPromise = null;
+
+function loadHlsLibrary() {
+    if (window.Hls) return Promise.resolve(window.Hls);
+    if (hlsLibraryPromise) return hlsLibraryPromise;
+    hlsLibraryPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.min.js';
+        script.async = true;
+        const timeout = setTimeout(() => {
+            script.remove();
+            reject(new Error('HLS playback support timed out'));
+        }, 10000);
+        script.onload = () => {
+            clearTimeout(timeout);
+            window.Hls ? resolve(window.Hls) : reject(new Error('HLS library unavailable'));
+        };
+        script.onerror = () => {
+            clearTimeout(timeout);
+            reject(new Error('Could not load HLS playback support'));
+        };
+        document.head.appendChild(script);
+    }).catch(error => {
+        hlsLibraryPromise = null;
+        throw error;
+    });
+    return hlsLibraryPromise;
+}
+
+window.vortexResolvePlayerStream = async function(button) {
+    const embedUrl = safeRemoteUrl(button.dataset.src);
+    const frameId = button.dataset.frameId;
+    const frame = document.getElementById(frameId);
+    const wrap = frame?.closest('.embed-frame-wrap');
+    const status = wrap?.querySelector('.player-resolve-status');
+    if (!embedUrl || !frame || !wrap) return;
+
+    if (wrap._resolveController) wrap._resolveController.abort();
+    const controller = new AbortController();
+    wrap._resolveController = controller;
+    button.disabled = true;
+    if (status) status.textContent = 'Resolving host…';
+    let cleanupDirect = null;
+    const timeout = setTimeout(() => controller.abort(), 35000);
+    try {
+        const response = await fetch('/api/resolve-embed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: embedUrl }),
+            signal: controller.signal,
+        });
+        const data = await response.json();
+        if (wrap._resolveController !== controller || button.dataset.src !== embedUrl) return;
+        if (!response.ok || !(data.proxy_url || data.url)) {
+            throw new Error(data.detail || data.error || 'Host could not be resolved');
+        }
+
+        const oldVideo = wrap.querySelector('video.player-direct-video');
+        if (oldVideo) {
+            teardownPlayerVideo(oldVideo);
+            oldVideo.remove();
+        }
+
+        const video = document.createElement('video');
+        video.className = 'player-direct-video';
+        video.controls = true;
+        video.autoplay = true;
+        video.playsInline = true;
+        video.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;background:var(--video-bg);object-fit:contain;';
+        frame.style.display = 'none';
+        frame.insertAdjacentElement('afterend', video);
+
+        const playbackUrl = data.proxy_url || data.url;
+        const isHls = data.ext === 'm3u8' || /(?:m3u8|hls-proxy)/i.test(playbackUrl);
+        const fail = message => {
+            if (video._tearingDown) return;
+            if (status) status.textContent = `${message} — use Open Host.`;
+            frame.style.display = '';
+            teardownPlayerVideo(video);
+            video.remove();
+        };
+        cleanupDirect = fail;
+        if (status) status.textContent = 'Starting playback…';
+        video._playbackTimer = setTimeout(() => {
+            fail('Direct playback timed out');
+        }, 25000);
+
+        video.addEventListener('canplay', () => {
+            if (video._tearingDown) return;
+            clearTimeout(video._playbackTimer);
+            if (status) status.textContent = 'Ready';
+            video.play().catch(() => {});
+        }, { once: true });
+        video.addEventListener('error', () => fail('Direct playback failed'), { once: true });
+
+        if (isHls && !video.canPlayType('application/vnd.apple.mpegurl')) {
+            const Hls = await loadHlsLibrary();
+            if (wrap._resolveController !== controller || button.dataset.src !== embedUrl) {
+                video.remove();
+                return;
+            }
+            if (!Hls.isSupported()) throw new Error('HLS is not supported in this browser');
+            const hls = new Hls({ enableWorker: true });
+            video._hls = hls;
+            hls.on(Hls.Events.ERROR, (_event, detail) => {
+                if (detail.fatal) fail('HLS playback failed');
+            });
+            hls.loadSource(playbackUrl);
+            hls.attachMedia(video);
+        } else {
+            video.src = playbackUrl;
+        }
+    } catch (error) {
+        if (wrap._resolveController !== controller) return;
+        const message = error.name === 'AbortError' ? 'Host resolution timed out' : (error.message || 'Direct playback failed');
+        if (cleanupDirect) cleanupDirect(message);
+        else if (status) status.textContent = `${message} — use Open Host.`;
+    } finally {
+        clearTimeout(timeout);
+        if (wrap._resolveController === controller) {
+            wrap._resolveController = null;
+            button.disabled = false;
+        }
+    }
+};
 
 function renderEmptyState(kind = 'ready') {
     const states = {
@@ -399,6 +579,7 @@ function showModalLoading(v) { dom.modalLoading.style.display = v ? 'flex' : 'no
 // ============================================================
 function openModal(title, showBack = false, wideVideo = false) {
     if (dom.overlay.style.display !== 'flex') state.lastFocus = document.activeElement;
+    teardownPlayerContent(dom.modalList);
     dom.modalTitle.innerText = title;
     dom.modalList.innerHTML  = '';
     dom.finalUrl.style.display = 'none';
@@ -417,10 +598,7 @@ function closeModal() {
     state.modalHistory = [];
     state.activeItem = null;
     dom.shareModalBtn.style.display = 'none';
-    // Stop any playing video/iframe before closing
-    dom.mainModal.querySelectorAll('iframe').forEach(frame => { frame.src = 'about:blank'; });
-    const video = dom.mainModal.querySelector('video');
-    if (video) { video.pause(); video.src = ''; }
+    teardownPlayerContent(dom.mainModal);
     dom.overlay.style.display = 'none';
     dom.overlay.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('is-locked');
@@ -432,6 +610,7 @@ function closeModal() {
 dom.modalBackBtn.onclick = () => {
     if (state.modalHistory.length > 0) {
         const prev = state.modalHistory.pop();
+        teardownPlayerContent(dom.modalList);
         prev();
     }
 };
@@ -837,10 +1016,9 @@ function playVideo(url, linkId) {
     const isAkwamCdn = url.includes('downet.net') || url.includes('akwam');
 
     if (isAkwamCdn && linkId) {
-        // The Akwam CDN blocks all datacenter IPs (even headless browsers on
-        // the server). We CANNOT proxy or redirect. Instead we:
-        //   1. Ask the server to resolve the MP4 URL via Playwright
-        //   2. Open it directly in the user's browser (their residential IP works)
+        // Resolve a fresh signed URL for display/download. Embedded playback
+        // uses the same-origin Akwam stream endpoint because a subset of
+        // Downet shards currently have a broken public TLS certificate chain.
         dom.modalList.innerHTML = `
             <div style="text-align:center;padding:3rem;">
                 <div class="spinner" style="margin:0 auto 1.5rem;width:36px;height:36px;"></div>
@@ -861,8 +1039,8 @@ function playVideo(url, linkId) {
                                     <polyline points="7 10 12 15 17 10"></polyline>
                                     <line x1="12" y1="15" x2="12" y2="3"></line>
                                 </svg>
-                                <p style="color:var(--text-primary);font-weight:600;font-size:1.05rem;margin-bottom:0.25rem;">Direct Link Ready!</p>
-                                <p style="color:var(--text-secondary);font-size:0.8rem;">CDN protection bypassed successfully.</p>
+                                <p style="color:var(--text-primary);font-weight:600;font-size:1.05rem;margin-bottom:0.25rem;">Stream Ready</p>
+                                <p style="color:var(--text-secondary);font-size:0.8rem;">Use protected playback here or open the direct fallback.</p>
                             </div>
                             <div class="link-display-box" style="margin-bottom:1.5rem;">
                                 <code class="raw-url" style="font-size:0.7rem;word-break:break-all;">${mp4Url}</code>
@@ -886,35 +1064,45 @@ function playVideo(url, linkId) {
                                         <line x1="17" y1="17" x2="22" y2="17"></line>
                                         <line x1="17" y1="7" x2="22" y2="7"></line>
                                     </svg>
-                                    Try Embedded Player
+                                    PLAY HERE
                                 </button>
                             </div>
                             <p style="color:var(--text-muted);font-size:0.7rem;margin-top:1rem;">
-                                The video opens directly from the CDN using your connection. If the embedded player fails, use "Open in New Tab".
+                                Protected playback preserves seeking and avoids host TLS/CORS failures. If it is unavailable, use "Open Video in New Tab".
                             </p>
                         </div>`;
                     
                     document.getElementById('btnCopyStream').onclick = e => copyLinkToClipboard(mp4Url, e.target);
                     document.getElementById('btnTryEmbed').onclick = () => {
-                        // Try embedding directly — might work since it's the user's browser
+                        const proxyUrl = `/api/akwam-stream?url=${encodeURIComponent(linkId)}`;
                         dom.modalList.innerHTML = `
                             <div style="padding:1rem;width:100%;display:flex;flex-direction:column;background:var(--video-bg);border-radius:var(--radius);overflow:hidden;">
-                                <video id="akwamVideo" controls autoplay playsinline referrerpolicy="no-referrer" style="width:100%;max-height:70vh;outline:none;background:var(--video-bg);border-radius:var(--radius);object-fit:contain;">
-                                    <source src="${mp4Url}" type="video/mp4">
+                                <video id="akwamVideo" src="${proxyUrl}" controls autoplay playsinline style="width:100%;max-height:70vh;outline:none;background:var(--video-bg);border-radius:var(--radius);object-fit:contain;">
                                     Your browser does not support HTML5 video.
                                 </video>
-                                <p id="streamStatus" style="color:var(--text-secondary);font-size:0.8rem;text-align:center;padding:0.5rem;">Loading stream from CDN...</p>
+                                <p id="streamStatus" style="color:var(--text-secondary);font-size:0.8rem;text-align:center;padding:0.5rem;">Loading protected stream...</p>
                             </div>`;
                         const video = document.getElementById('akwamVideo');
                         const status = document.getElementById('streamStatus');
                         if (video) {
-                            video.addEventListener('canplay', () => { if (status) status.textContent = ''; });
-                            video.addEventListener('error', () => {
+                            const showPlaybackFallback = message => {
                                 if (status) {
                                     status.style.color = '#f87171';
-                                    status.innerHTML = 'Embedded playback failed. <a href="' + mp4Url + '" target="_blank" style="color:var(--accent);text-decoration:underline;">Open in new tab instead</a>';
+                                    status.innerHTML = message + ' <a href="' + mp4Url + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:underline;">Open in new tab instead</a>';
                                 }
-                            });
+                            };
+                            video._playbackTimer = setTimeout(() => {
+                                showPlaybackFallback('Protected playback timed out.');
+                            }, 20000);
+                            video.addEventListener('canplay', () => {
+                                clearTimeout(video._playbackTimer);
+                                if (status) status.textContent = '';
+                            }, { once: true });
+                            video.addEventListener('error', () => {
+                                if (video._tearingDown) return;
+                                clearTimeout(video._playbackTimer);
+                                showPlaybackFallback('Embedded playback failed.');
+                            }, { once: true });
                         }
                     };
                 } else {

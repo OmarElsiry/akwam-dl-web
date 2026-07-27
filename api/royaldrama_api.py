@@ -15,10 +15,11 @@ offers the original site link as a fallback.
 """
 import html as html_lib
 import re
+from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
 from curl_cffi import requests as _req
 
-BASE = "https://w8.royal-drama.com"
-HOMEPAGE = "https://w8.royal-drama.com/home8"
+BASE = "https://w9.royal-drama.com"
+HOMEPAGE = BASE + "/home8"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -56,7 +57,7 @@ def _to_google_translate_url(url: str) -> str:
 
 def _fetch(url: str, timeout: int = 30) -> str | None:
     try:
-        goog_url = _to_google_translate_url(url)
+        goog_url = _to_google_translate_url(_clean_url(url))
         r = _req.get(goog_url, headers=HEADERS, impersonate="chrome110", timeout=timeout)
         r.raise_for_status()
         text = r.text
@@ -71,13 +72,39 @@ def _fetch(url: str, timeout: int = 30) -> str | None:
 def _abs(url: str) -> str:
     if not url:
         return ""
+    url = html_lib.unescape(url.strip())
     if url.startswith("http"):
-        return url
+        return _clean_url(url)
     if url.startswith("//"):
-        return "https:" + url
+        return _clean_url("https:" + url)
     if url.startswith("/"):
-        return BASE + url
-    return BASE + "/" + url
+        return _clean_url(BASE + url)
+    return _clean_url(BASE + "/" + url)
+
+
+def _clean_url(url: str) -> str:
+    """Remove Google Translate navigation parameters from returned site URLs."""
+    url = html_lib.unescape((url or "").strip())
+    if not url:
+        return ""
+    parts = urlsplit(url)
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if not key.removeprefix("amp;").startswith("_x_tr_")
+    ]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def _normalize_server_url(url: str) -> str:
+    """Normalize provider mirrors that no longer preserve embed paths."""
+    url = _abs(url)
+    parts = urlsplit(url)
+    if (parts.hostname or "").lower() == "uqload.bz":
+        # uqload.bz redirects every embed to the uqload.is homepage and drops
+        # the file id; uqload.is serves the same embed path intact.
+        url = urlunsplit((parts.scheme, "uqload.is", parts.path, parts.query, parts.fragment))
+    return url
 
 
 def _clean(text: str) -> str:
@@ -131,7 +158,7 @@ def _parse_grid(html: str, force_type: str | None = None) -> list[dict]:
 
 def search(query: str) -> list[dict]:
     """Search is bot-protected. We query the search.php endpoint through Google Translate proxy."""
-    url = f"{BASE}/search.php?keywords={query}"
+    url = f"{BASE}/search.php?keywords={quote_plus(query)}"
     html = _fetch(url)
     return _parse_grid(html) if html else []
 
@@ -162,7 +189,7 @@ def get_episodes_list(page: int = 1) -> list[dict]:
     if page > 1:
         url = f"{BASE}/episodes.php?&page={page}"
     html = _fetch(url)
-    return _parse_grid(html, force_type="series") if html else []
+    return _parse_grid(html, force_type="episode") if html else []
 
 
 def get_categories() -> list[dict]:
@@ -232,7 +259,7 @@ def get_detail(url: str) -> dict:
     try:
         v_html = _fetch(view_url)
         for li_match in re.finditer(r'<li[^>]*data-embed="([^"]+)"[^>]*>(.*?)</li>', v_html, re.IGNORECASE | re.DOTALL):
-            embed_html = li_match.group(1)
+            embed_html = html_lib.unescape(li_match.group(1))
             inner_html = li_match.group(2)
             
             src_match = re.search(r"src=['\"]([^'\"]+)['\"]", embed_html, re.IGNORECASE)
@@ -241,13 +268,15 @@ def get_detail(url: str) -> dict:
                 name_match = re.search(r">([^<]+)</a>", inner_html, re.IGNORECASE)
                 
             if src_match and name_match:
-                servers.append({"name": name_match.group(1).strip(), "url": src_match.group(1)})
+                server_url = _normalize_server_url(src_match.group(1))
+                if server_url and all(server_url != server["url"] for server in servers):
+                    servers.append({"name": _clean(name_match.group(1)), "url": server_url})
                 
         # If no servers found from li tags, try finding an iframe directly in view_url
         if not servers and v_html:
             iframe_match = re.search(r'<iframe[^>]*src=["\']([^"\']+)["\']', v_html, re.IGNORECASE)
             if iframe_match:
-                servers.append({"name": "Server 1", "url": iframe_match.group(1)})
+                servers.append({"name": "Server 1", "url": _normalize_server_url(iframe_match.group(1))})
                 
     except Exception as e:
         pass
@@ -256,7 +285,7 @@ def get_detail(url: str) -> dict:
         # Try finding an iframe directly in watch url
         iframe_match = re.search(r'<iframe[^>]*src=["\']([^"\']+)["\']', html, re.IGNORECASE)
         if iframe_match:
-            servers.append({"name": "Server 1", "url": iframe_match.group(1)})
+            servers.append({"name": "Server 1", "url": _normalize_server_url(iframe_match.group(1))})
 
     return {
         "metadata": {

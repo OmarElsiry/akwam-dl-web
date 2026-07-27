@@ -5,6 +5,7 @@ Uses yt-dlp as primary resolver with fallbacks.
 
 import asyncio
 import re
+import time
 from typing import Optional, Dict, List
 from dataclasses import dataclass
 
@@ -24,6 +25,10 @@ class ResolvedVideo:
 
 class VideoResolver:
     """Resolves embed player URLs to direct video URLs."""
+
+    # Resolver results are commonly signed, short-lived URLs.  A small cache
+    # absorbs duplicate UI requests without serving an expired stream later.
+    CACHE_TTL_SECONDS = 90
 
     # yt-dlp options for silent extraction
     YDL_OPTS = {
@@ -48,7 +53,7 @@ class VideoResolver:
     }
 
     def __init__(self):
-        self._cache: Dict[str, ResolvedVideo] = {}
+        self._cache: Dict[str, tuple[float, ResolvedVideo]] = {}
 
     async def resolve(self, embed_url: str, cookies: list = None,
                       referer: str = None) -> Optional[ResolvedVideo]:
@@ -61,23 +66,29 @@ class VideoResolver:
         Returns:
             ResolvedVideo with direct URL, or None if resolution failed
         """
-        # Check cache
-        if embed_url in self._cache:
-            return self._cache[embed_url]
+        # Cookie/referer-backed resolutions are user-session-specific and must
+        # never be shared through the process-wide cache.
+        use_cache = not cookies and not referer
+        if use_cache and embed_url in self._cache:
+            cached_at, cached_result = self._cache[embed_url]
+            if time.monotonic() - cached_at < self.CACHE_TTL_SECONDS:
+                return cached_result
+            self._cache.pop(embed_url, None)
 
         # Run resolution in thread pool (yt-dlp is blocking)
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None, self._resolve_sync, embed_url, cookies, referer)
 
-        if result:
-            self._cache[embed_url] = result
+        if result and use_cache:
+            self._cache[embed_url] = (time.monotonic(), result)
         return result
 
     # Known JS-only hosts — skip yt-dlp, go directly to Playwright
     _JS_ONLY_HOSTS = [
         'govid.live', 'govid.me', 'vidspeed.org', 'vidoba.org',
         'hglink.to', 'dhcplay.com', 'callistanise.com', 'dingtezuni.com', 'playmogo.com',
+        'hgcloud.to',
         'miiiixdrop.net', 'fastvid.cam', 'fastved.cam', 'vinovo.to',
         'vipserver.liiivideo.com', 'lulustream.com', 'shaaheid4u.rpmvip.com',
         'doodstream.com', 'mixdrop.ps', 'mixdrop.top', 'vidtube.pro',
@@ -119,7 +130,8 @@ class VideoResolver:
         except Exception as e:
             print(f"[VideoResolver] yt-dlp failed: {e}")
             # Try fallback methods
-            return self._fallback_resolve(embed_url)
+            return self._fallback_resolve(
+                embed_url, cookies=cookies, referer=referer)
 
     def _select_best_format(self, formats: List[Dict]) -> Optional[Dict]:
         """Select best quality format with video + audio."""
@@ -181,7 +193,8 @@ class VideoResolver:
             r = _req.get(url, headers=headers, timeout=15, allow_redirects=True)
             html = r.content.decode('utf-8', errors='replace')
 
-            found = self._scrape_html_for_video(html, url, _depth)
+            found = self._scrape_html_for_video(
+                html, url, _depth, cookies=cookies, referer=referer)
             if found:
                 return found
         except Exception as e:
@@ -215,7 +228,9 @@ class VideoResolver:
             print(f"[VideoResolver] browser fallback failed: {e}")
         return None
 
-    def _scrape_html_for_video(self, html: str, page_url: str, _depth: int = 0) -> Optional[ResolvedVideo]:
+    def _scrape_html_for_video(self, html: str, page_url: str, _depth: int = 0,
+                               cookies: list = None,
+                               referer: str = None) -> Optional[ResolvedVideo]:
         """Try many patterns to extract a video URL from HTML."""
         import re as _re
 
@@ -234,13 +249,20 @@ class VideoResolver:
             if not candidate:
                 return None
             url = _abs(candidate.strip().strip('"').strip("'"))
-            if url and ('.mp4' in url or '.m3u8' in url or '.mkv' in url or 'playlist.m3u8' in url):
+            low = (url or '').lower()
+            is_manifest = (
+                '.m3u8' in low or 'master.txt' in low or 'urlset' in low
+                or low.endswith('.m3u') or '/manifest' in low
+            )
+            is_video_file = any(
+                ext in low for ext in ('.mp4', '.mkv', '.webm', '.m4v', '.mov')
+            )
+            if url and (is_video_file or is_manifest):
                 ext = 'mp4'
-                if '.m3u8' in url: ext = 'm3u8'
-                if '.mkv' in url: ext = 'mkv'
+                if is_manifest: ext = 'm3u8'
+                if '.mkv' in low: ext = 'mkv'
+                if '.webm' in low: ext = 'webm'
                 return ResolvedVideo(url=url, ext=ext)
-            if url and url.startswith('http'):
-                return ResolvedVideo(url=url, ext='mp4')
             return None
 
         # ── Pattern 1: <source> tags ──────────────────────────────
@@ -368,7 +390,9 @@ class VideoResolver:
         ):
             iframe_url = m.group(1)
             if iframe_url != page_url and not iframe_url.startswith('javascript'):
-                result = self._fallback_resolve(iframe_url, _depth + 1)
+                result = self._fallback_resolve(
+                    iframe_url, _depth + 1, cookies=cookies,
+                    referer=referer or page_url)
                 if result:
                     return result
 

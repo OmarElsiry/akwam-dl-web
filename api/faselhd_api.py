@@ -324,38 +324,80 @@ class FaselhdAPI:
         return servers
 
     def resolve_govid_embed(self, embed_url, post_id):
-        """Try to resolve a govid embed URL to a video URL.
+        """Resolve a govid watch/download URL to playable media.
 
-        govid now uses Cloudflare Turnstile, so server-side resolution
-        is limited. We try a few patterns but fall back to returning
-        the embed URL as-is (the browser will handle Turnstile).
+        ``/play/`` is a wrapper around ``/e/{id}/``.  The latter keeps the
+        HLS URL as a hex-encoded JavaScript string, so looking only for clear
+        ``.m3u8`` text leaves every FaselHD watch server unresolved.
         """
         try:
-            # Try the /d/ page format (more stable than /play/)
-            d_url = embed_url
-            if '/play/' in d_url:
-                # Convert /play/... to /d/{post_id}/
-                if post_id:
-                    d_url = f'https://govid.live/d/{post_id}/'
+            pages = []
+            media_id = str(post_id) if post_id else None
 
-            # Try to fetch the page and look for video URLs
-            try:
-                r = safe_get(d_url, headers={**HEADERS, 'Referer': 'https://faselhd.rip/'}, timeout=10)
-                if r is not None:
-                    html = r.text
-                    # Look for direct video URLs
-                    for m in re.finditer(
-                        r'(https?://[^\s"\'<>]+\.(?:m3u8|mp4)[^\s"\'<>]*)',
-                        html
-                    ):
-                        return {'url': m.group(1), 'type': 'hls' if '.m3u8' in m.group(1) else 'mp4'}
-            except Exception:
-                pass
+            r = safe_get(
+                embed_url,
+                headers={**HEADERS, 'Referer': 'https://faselhd.rip/'},
+                timeout=10,
+            )
+            if r is not None and r.ok:
+                pages.append(r.text)
+
+                # Wrapper pages expose the canonical player URL.  This also
+                # recovers the media id when /resolve is called without one.
+                player_match = re.search(
+                    r'https?://(?:www\.)?govid\.live/e/(\d+)/[^"\'<>\s]*',
+                    r.text,
+                    re.IGNORECASE,
+                )
+                if player_match:
+                    media_id = player_match.group(1)
+
+            if not media_id:
+                id_match = re.search(r'govid\.live/(?:d|e)/(\d+)', embed_url, re.IGNORECASE)
+                if id_match:
+                    media_id = id_match.group(1)
+
+            # Fetch the canonical player even for /d/ links: it is immediately
+            # playable, while the download endpoint may need time to prepare.
+            if media_id:
+                player_url = f'https://govid.live/e/{media_id}/'
+                if not embed_url.startswith(player_url):
+                    player = safe_get(
+                        player_url,
+                        headers={**HEADERS, 'Referer': embed_url},
+                        timeout=10,
+                    )
+                    if player is not None and player.ok:
+                        pages.append(player.text)
+
+            for page_html in pages:
+                normalized = html_mod.unescape(page_html).replace(r'\/', '/')
+
+                for m in re.finditer(
+                    r'(https?://[^\s"\'<>]+\.(?:m3u8|mp4)(?:\?[^\s"\'<>]*)?)',
+                    normalized,
+                    re.IGNORECASE,
+                ):
+                    url = m.group(1)
+                    return {'url': url, 'type': 'hls' if '.m3u8' in url.lower() else 'mp4'}
+
+                # Current govid player: const Mohix = "<hex encoded URL>".
+                # Accept variable renames but only return decoded HTTP media.
+                for encoded in re.findall(
+                    r'(?:const|let|var)\s+\w+\s*=\s*["\']([0-9a-fA-F]{40,})["\']',
+                    normalized,
+                ):
+                    try:
+                        url = bytes.fromhex(encoded).decode('utf-8')
+                    except (ValueError, UnicodeDecodeError):
+                        continue
+                    if url.startswith(('http://', 'https://')) and re.search(r'\.(?:m3u8|mp4)(?:\?|$)', url, re.I):
+                        return {'url': url, 'type': 'hls' if '.m3u8' in url.lower() else 'mp4'}
 
             # Fallback: return the embed URL for browser-based resolution
             return {'url': embed_url, 'type': 'embed'}
-        except:
-            return None
+        except Exception:
+            return {'url': embed_url, 'type': 'embed'}
 
     def resolve_embed(self, embed_url):
         try:

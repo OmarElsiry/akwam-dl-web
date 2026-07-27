@@ -7,6 +7,7 @@ from urllib.parse import urlparse, urljoin
 # on EarnVids-style embed hosts. The player only loads when the page is opened
 # with one of these as the Referer.
 PARTNER_REFERERS = [
+    'https://shhahhid4u.com/',
     'https://tv10.egydead.live/',
     'https://wecima.cx/',
     'https://sahid4u.com/',
@@ -78,15 +79,37 @@ def _is_manifest_url(u: str) -> bool:
     """Heuristic: does this URL look like an HLS master/playlist?"""
     if not u or u.startswith('blob:'):
         return False
-    low = u.lower()
+    path = urlparse(u).path.lower()
+    name = path.rsplit('/', 1)[-1]
     return (
-        '.m3u8' in low
-        or 'master.txt' in low
-        or 'urlset' in low
-        or '/playlist' in low
-        or low.endswith('.m3u')
-        or 'manifest' in low
+        name.endswith(('.m3u8', '.m3u'))
+        or name == 'master.txt'
+        or 'playlist' in name
+        or 'manifest' in name
+        or 'urlset' in name
     )
+
+
+def _manifest_candidate_score(url: str) -> int:
+    """Prefer stable player manifests over signed bootstrap mirrors.
+
+    StreamHG-family players commonly request both a signed ``/hls2/``
+    bootstrap playlist and a ``/hls3/.../master.txt`` playlist.  Both master
+    responses are valid, but relative variants below the hls2 mirror can be
+    forbidden while the hls3 variants are fetchable.  Rank only manifests the
+    browser actually requested; this does not invent or transform host URLs.
+    """
+    low = (url or '').lower()
+    score = 0
+    if '/hls3/' in low:
+        score += 40
+    if 'master.txt' in low:
+        score += 20
+    if '/hls2/' in low:
+        score -= 20
+    if '?' in url:
+        score -= 5
+    return score
 
 
 # Full-file video extensions (exclude HLS segments like .ts/.woff2).
@@ -255,6 +278,12 @@ def capture_hls_manifest(embed_url: str, referer: str = None, cookies: list = No
                     except Exception as e:
                         last_err = e
 
+                # Preserve the final player origin after HTTP/JS redirects.
+                # HLS CDNs validate this origin, not necessarily the original
+                # alias supplied by a provider (dingtezuni -> callistanise).
+                effective_page_url = page.url or embed_url
+                effective_origin = _embed_host(effective_page_url)
+
                 # Quick check for "embed restricted" — skip this referer immediately
                 try:
                     body_text = page.evaluate("() => document.body.innerText")
@@ -284,13 +313,30 @@ def capture_hls_manifest(embed_url: str, referer: str = None, cookies: list = No
                 # Poll for the manifest URL
                 deadline = time.time() + min(28, max(10, timeout_ms / 700))
                 manifest = None
+                manifest_first_seen = None
                 while time.time() < deadline:
-                    manifest = next((u for u in captured if _is_manifest_url(u)), None)
-                    if manifest and manifest in manifest_bodies:
-                        body = manifest_bodies[manifest]
+                    manifest_candidates = []
+                    for captured_url in captured:
+                        if not _is_manifest_url(captured_url):
+                            continue
+                        absolute_url = urljoin(effective_page_url, captured_url)
+                        body = manifest_bodies.get(absolute_url)
                         if body and '#EXTM3U' in body:
+                            manifest_candidates.append((absolute_url, body))
+                    if manifest_candidates:
+                        if manifest_first_seen is None:
+                            # A player may issue its stable manifest immediately
+                            # after a signed bootstrap mirror. Give both requests
+                            # a brief chance to arrive before choosing.
+                            manifest_first_seen = time.time()
+                        elif time.time() - manifest_first_seen >= 0.75:
+                            manifest, body = max(
+                                manifest_candidates,
+                                key=lambda item: _manifest_candidate_score(item[0]),
+                            )
+                            browser_cookies = context.cookies()
                             browser.close()
-                            return manifest, body
+                            return manifest, body, effective_page_url, browser_cookies
 
                     # Check jwplayer config for a file URL
                     try:
@@ -300,8 +346,8 @@ def capture_hls_manifest(embed_url: str, referer: str = None, cookies: list = No
                             " } catch(e){} return null; }"
                         )
                         if js and _is_manifest_url(js):
-                            captured.add(js)
-                            manifest = js
+                            manifest = urljoin(effective_page_url, js)
+                            captured.add(manifest)
                     except Exception:
                         pass
 
@@ -324,8 +370,8 @@ def capture_hls_manifest(embed_url: str, referer: str = None, cookies: list = No
                         )
                         if js and (_is_manifest_url(js)
                                    or '.mp4' in js.lower() or '.m3u8' in js.lower()):
-                            captured.add(js)
-                            manifest = js
+                            manifest = urljoin(effective_page_url, js)
+                            captured.add(manifest)
                     except Exception:
                         pass
 
@@ -364,6 +410,7 @@ def capture_hls_manifest(embed_url: str, referer: str = None, cookies: list = No
                         if cs and ('.mp4' in cs.lower() or '.m3u8' in cs.lower()
                                    or '.webm' in cs.lower() or '.mkv' in cs.lower()
                                    or any(d in cs.lower() for d in ['/hls2/', '/hls/', '/stream/', '/play/'])):
+                            cs = urljoin(effective_page_url, cs)
                             captured.add(cs)
                             if _is_manifest_url(cs):
                                 manifest = cs
@@ -380,11 +427,12 @@ def capture_hls_manifest(embed_url: str, referer: str = None, cookies: list = No
                     content = next((v for v in manifest_bodies.values()
                                    if v and '#EXTM3U' in v), None)
 
+                browser_cookies = context.cookies()
                 browser.close()
 
                 if manifest:
                     if content and '#EXTM3U' in content:
-                        return manifest, content
+                        return manifest, content, effective_page_url, browser_cookies
                     # Fallback: verify out-of-session (may fail on TTL).
                     try:
                         import requests
@@ -394,23 +442,23 @@ def capture_hls_manifest(embed_url: str, referer: str = None, cookies: list = No
                                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
                                               'AppleWebKit/537.36 (KHTML, like Gecko) '
                                               'Chrome/120.0.0.0 Safari/537.36',
-                                'Referer': embed_origin + '/',
-                                'Origin': embed_origin,
+                                'Referer': effective_origin + '/',
+                                'Origin': effective_origin,
                             },
                             timeout=15,
                         )
                         if r.status_code == 200 and '#EXTM3U' in r.text:
-                            return manifest, r.text
+                            return manifest, r.text, effective_page_url, browser_cookies
                     except Exception:
                         pass
                     # Return what we have (URL only) so the caller can retry.
-                    return manifest, content
+                    return manifest, content, effective_page_url, browser_cookies
 
                 # No HLS manifest found — try a direct video file
                 # (VideoJS / DoodStream / generic mp4 players).
                 vid = _first_video_file(captured)
                 if vid:
-                    return vid, None
+                    return vid, None, effective_page_url, browser_cookies
         except Exception as e:
             last_err = e
             continue

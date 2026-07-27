@@ -226,6 +226,58 @@ async def akwam_resolve_stream(url: str):
     return {"url": mp4_url, "referer": referer}
 
 
+@app.get("/api/akwam-stream")
+async def akwam_stream(url: str, request: Request):
+    """Resolve an Akwam page and proxy its media with byte-range support.
+
+    Some Downet shards currently present an incomplete TLS chain, which makes
+    an otherwise valid direct MP4 fail in browsers.  The provider keeps its
+    TLS workaround scoped to ``*.downet.net``; this endpoint exposes that
+    working connection as a normal same-origin video stream.
+    """
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or '').lower().rstrip('.')
+    if parsed.scheme not in ('http', 'https') or not hostname:
+        raise HTTPException(status_code=400, detail="Invalid Akwam URL")
+    allowed_akwam_hosts = {'ak.sv', 'akwam.it', 'akwam.to'}
+    if hostname not in allowed_akwam_hosts:
+        raise HTTPException(status_code=403, detail="Only Akwam pages are allowed")
+
+    loop = asyncio.get_event_loop()
+    upstream, info = await loop.run_in_executor(
+        None, akwam.stream_video, url, request.headers.get('range'))
+    # ``requests.Response`` is falsey for 4xx/5xx statuses.  Keep a real
+    # upstream response so range errors such as 416 reach the browser with
+    # their Content-Range metadata instead of being collapsed into a 502.
+    if upstream is None or not info:
+        raise HTTPException(status_code=502, detail="Could not open Akwam stream")
+
+    response_headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Accept-Ranges': info.get('accept_ranges') or 'bytes',
+        'Cache-Control': 'no-store',
+    }
+    if info.get('content_length'):
+        response_headers['Content-Length'] = info['content_length']
+    if info.get('content_range'):
+        response_headers['Content-Range'] = info['content_range']
+
+    def stream_body():
+        try:
+            yield from upstream.iter_content(chunk_size=65536)
+        finally:
+            upstream.close()
+
+    return StreamingResponse(
+        stream_body(),
+        status_code=info['status_code'],
+        media_type=info['content_type'],
+        headers=response_headers,
+    )
+
+
 class BulkResolveRequest(BaseModel):
     urls: List[Dict[str, str]] # List of {name: "...", url: "..."}
 
@@ -546,8 +598,11 @@ async def faselhd_get_servers(post_id: int):
     """Get available servers/embeds for a FaselHD post."""
     try:
         loop = asyncio.get_event_loop()
-        servers = await loop.run_in_executor(None, faselhd._get_servers, post_id)
-        return {"servers": servers}
+        # The WordPress post ID is not the player POST_ID expected by
+        # ajax.php. get_post_detail fetches the canonical post page first and
+        # lets _get_servers translate it, just like the main FaselHD UI path.
+        detail = await loop.run_in_executor(None, faselhd.get_post_detail, post_id)
+        return {"servers": (detail or {}).get("servers", [])}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -713,8 +768,25 @@ async def resolve_embed(req: ResolveEmbedRequest):
         raise HTTPException(status_code=400, detail="Missing 'url' parameter")
 
     try:
-        result = await video_resolver.resolve(
-            req.url, cookies=req.cookies, referer=req.referer)
+        result = None
+        used_specific_resolver = False
+        embed_hostname = (_up.urlparse(req.url).hostname or '').lower()
+        if embed_hostname == 'govid.live' or embed_hostname.endswith('.govid.live'):
+            # FaselHD's Govid wrapper exposes the real HLS source as hex JS.
+            # Its focused extractor is much faster and more reliable than the
+            # generic yt-dlp/browser chain.
+            loop = asyncio.get_event_loop()
+            specific = await loop.run_in_executor(
+                None, faselhd.resolve_govid_embed, req.url, None)
+            if specific and specific.get('url') and specific.get('type') in ('hls', 'mp4'):
+                used_specific_resolver = True
+                result = ResolvedVideo(
+                    url=specific['url'],
+                    ext='m3u8' if specific['type'] == 'hls' else 'mp4',
+                )
+        if result is None:
+            result = await video_resolver.resolve(
+                req.url, cookies=req.cookies, referer=req.referer)
         if not result:
             raise HTTPException(
                 status_code=502, 
@@ -730,20 +802,35 @@ async def resolve_embed(req: ResolveEmbedRequest):
             "formats": result.formats,
         }
         from urllib.parse import quote
-        # When the caller forwarded a real user session (cookies/referer), wrap
-        # the resolved URL in /api/media-proxy so the client can fetch the bytes
-        # with that same session replayed (gated hosts need it).
-        if req.cookies or req.referer:
-            embed_host = f"{_up.urlparse(req.url).scheme}://{_up.urlparse(req.url).netloc}"
-            sid = _store_session(req.cookies, req.referer, embed_host)
+        embed_host = f"{_up.urlparse(req.url).scheme}://{_up.urlparse(req.url).netloc}"
+        # Cookie-backed results need the session proxy.  Media CDNs generally
+        # validate the embed origin, while req.referer is only the partner page
+        # used to unlock the embed itself.
+        if req.cookies:
+            sid = _store_session(req.cookies, embed_host + '/', embed_host)
             # result.url is the captured media URL (m3u8 manifest OR direct file).
             target = result.url
             response["proxy_url"] = (
                 f"/api/media-proxy?sid={sid}&url={quote(target, safe='')}"
             )
         elif result.ext == 'm3u8':
-            # Standard EarnVids-style HLS: referer-locked, served via hls-proxy.
-            response["proxy_url"] = f"/api/hls-proxy?url={quote(req.url, safe='')}"
+            if used_specific_resolver:
+                # Govid already yielded the final manifest; do not repeat the
+                # much slower browser extraction on its wrapper URL.
+                response["proxy_url"] = (
+                    f"/api/hls-seg?url={quote(result.url, safe='')}"
+                    f"&ref={quote(req.url, safe='')}"
+                )
+            else:
+                # Standard JS-only HLS: capture player state/cookies on demand.
+                response["proxy_url"] = f"/api/hls-proxy?url={quote(req.url, safe='')}"
+        else:
+            # Direct files are also proxied so CORS, TLS and Referer policy are
+            # consistent across hosts and byte-range seeking keeps working.
+            response["proxy_url"] = (
+                f"/api/proxy-stream?url={quote(result.url, safe='')}"
+                f"&referer={quote(embed_host + '/', safe='')}"
+            )
         return response
     except HTTPException:
         raise
@@ -804,7 +891,7 @@ async def egydead_download(req: DownloadRequest):
 # ------------------------------------------------------------------ #
 
 @app.get("/api/proxy-stream")
-async def proxy_stream(url: str, request: Request):
+async def proxy_stream(url: str, request: Request, referer: str = ""):
     """Proxy a video stream through the server.
     
     This downloads the video from the remote server and streams it to the
@@ -831,9 +918,17 @@ async def proxy_stream(url: str, request: Request):
 
     # Forward Range header for seeking support
     range_header = request.headers.get('range')
+    ref = url
+    if referer:
+        ref_parsed = urlparse(referer)
+        if ref_parsed.scheme in ('http', 'https') and ref_parsed.hostname:
+            ref = referer
+    ref_parsed = urlparse(ref)
+    origin = f"{ref_parsed.scheme}://{ref_parsed.netloc}"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': url,
+        'Referer': ref,
+        'Origin': origin,
         'Accept': '*/*',
     }
     if range_header:
@@ -856,7 +951,8 @@ async def proxy_stream(url: str, request: Request):
             'Content-Type': content_type,
             'Accept-Ranges': accept_ranges,
             'Access-Control-Allow-Origin': '*',
-            'Cache-Control': 'public, max-age=3600',
+            # Resolved host URLs are usually signed and short-lived.
+            'Cache-Control': 'no-store',
         }
         if content_length:
             resp_headers['Content-Length'] = content_length
@@ -880,6 +976,10 @@ async def proxy_stream(url: str, request: Request):
             media_type=content_type
         )
     except httpx.HTTPError as e:
+        if 'response' in locals():
+            await response.aclose()
+        if 'client' in locals():
+            await client.aclose()
         raise HTTPException(status_code=502, detail=f"Upstream error: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -904,15 +1004,24 @@ _HLS_SEG_CT = 'application/vnd.apple.mpegurl'
 # ------------------------------------------------------------------ #
 SESSION_STORE: dict = {}
 SESSION_TTL = 1800  # seconds
+SESSION_MAX = 256
 
 
 def _store_session(cookies, referer, host):
+    now = time.time()
+    expired = [key for key, value in SESSION_STORE.items()
+               if now - value.get('ts', 0) > SESSION_TTL]
+    for key in expired:
+        SESSION_STORE.pop(key, None)
+    while len(SESSION_STORE) >= SESSION_MAX:
+        oldest = min(SESSION_STORE, key=lambda key: SESSION_STORE[key].get('ts', 0))
+        SESSION_STORE.pop(oldest, None)
     sid = uuid.uuid4().hex
     SESSION_STORE[sid] = {
         'cookies': cookies or [],
         'referer': referer,
         'host': host,
-        'ts': time.time(),
+        'ts': now,
     }
     return sid
 
@@ -921,9 +1030,13 @@ def _get_session(sid):
     s = SESSION_STORE.get(sid)
     if not s:
         return None
-    if time.time() - s['ts'] > SESSION_TTL:
+    now = time.time()
+    if now - s['ts'] > SESSION_TTL:
         SESSION_STORE.pop(sid, None)
         return None
+    # Sessions back active HLS playback, so expiry and capacity eviction must
+    # be based on the most recent segment request rather than creation time.
+    s['ts'] = now
     return s
 
 
@@ -958,11 +1071,19 @@ async def hls_proxy(url: str, referer: str = ""):
     if not captured:
         raise HTTPException(status_code=502, detail="Could not capture HLS manifest")
 
-    manifest, raw = captured if isinstance(captured, tuple) else (captured, None)
+    if isinstance(captured, tuple):
+        manifest = captured[0]
+        raw = captured[1] if len(captured) > 1 else None
+        effective_referer = captured[2] if len(captured) > 2 else None
+        captured_cookies = captured[3] if len(captured) > 3 else []
+    else:
+        manifest, raw, effective_referer, captured_cookies = captured, None, None, []
 
     # The CDN serves the manifest/segments and requires the Referer to be the
     # EMBED host (e.g. callistanise.com), not the random manifest CDN host.
-    embed_host = f"{_up.urlparse(url).scheme}://{_up.urlparse(url).netloc}"
+    embed_referer = effective_referer or url
+    embed_parts = _up.urlparse(embed_referer)
+    embed_origin = f"{embed_parts.scheme}://{embed_parts.netloc}"
 
     # Prefer the manifest content captured in-session (avoids a second,
     # TTL-limited fetch). Fall back to a fresh fetch if needed.
@@ -972,9 +1093,12 @@ async def hls_proxy(url: str, referer: str = ""):
                 resp = await client.get(
                     manifest,
                     headers={
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Referer': embed_host + '/',
-                        'Origin': embed_host,
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                                      'AppleWebKit/537.36 (KHTML, like Gecko) '
+                                      'Chrome/120.0.0.0 Safari/537.36',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Referer': embed_referer,
+                        'Origin': embed_origin,
                         'Accept': '*/*',
                     },
                 )
@@ -985,7 +1109,18 @@ async def hls_proxy(url: str, referer: str = ""):
     if not raw or '#EXTM3U' not in raw:
         raise HTTPException(status_code=502, detail="Captured manifest was empty/expired")
 
-    rewritten = _rewrite_hls(raw, manifest, embed_host)
+    if captured_cookies:
+        sid = _store_session(captured_cookies, embed_referer, embed_origin)
+        rewritten = _rewrite_hls_to(
+            raw,
+            manifest,
+            lambda target: (
+                f"/api/media-proxy?sid={sid}"
+                f"&url={_up.quote(target, safe='')}"
+            ),
+        )
+    else:
+        rewritten = _rewrite_hls(raw, manifest, embed_referer)
     return Response(
         content=rewritten,
         media_type=_HLS_SEG_CT,
@@ -994,7 +1129,7 @@ async def hls_proxy(url: str, referer: str = ""):
 
 
 @app.get("/api/hls-seg")
-async def hls_segment(url: str, ref: str = ""):
+async def hls_segment(url: str, request: Request, ref: str = ""):
     """Proxy a single HLS variant/segment through our server, injecting the
     Referer required by the embed host's CDN."""
     if not url:
@@ -1008,27 +1143,57 @@ async def hls_segment(url: str, ref: str = ""):
     if any(hostname.startswith(b) for b in blocked) or hostname.endswith('.local'):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    ref_host = ref or f"{parsed.scheme}://{parsed.netloc}"
+    referrer = ref or f"{parsed.scheme}://{parsed.netloc}/"
+    ref_parts = urlparse(referrer)
+    ref_origin = f"{ref_parts.scheme}://{ref_parts.netloc}"
     try:
+        upstream_headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                          'AppleWebKit/537.36 (KHTML, like Gecko) '
+                          'Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': referrer,
+            'Origin': ref_origin,
+            'Accept': '*/*',
+        }
+        range_header = request.headers.get('Range')
+        if range_header:
+            upstream_headers['Range'] = range_header
         async with httpx.AsyncClient(follow_redirects=True, verify=False, timeout=httpx.Timeout(30.0, read=120.0)) as client:
             resp = await client.get(
                 url,
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Referer': ref_host + '/',
-                    'Origin': ref_host,
-                    'Accept': '*/*',
-                },
+                headers=upstream_headers,
             )
             content_type = resp.headers.get('content-type', 'video/mp2t')
+            body = resp.content
+            if ('mpegurl' in content_type.lower()
+                    or (body and body[:200].lstrip().startswith(b'#EXTM3U'))):
+                rewritten = _rewrite_hls(
+                    body.decode('utf-8', 'replace'), url, referrer)
+                return Response(
+                    content=rewritten,
+                    media_type=_HLS_SEG_CT,
+                    headers={
+                        'Access-Control-Allow-Origin': '*',
+                        'Cache-Control': 'no-store',
+                    },
+                )
+            response_headers = {
+                'Access-Control-Allow-Origin': '*',
+                'Accept-Ranges': resp.headers.get('accept-ranges', 'bytes'),
+                'Cache-Control': 'no-store',
+            }
+            for source, target in (
+                ('content-range', 'Content-Range'),
+                ('content-length', 'Content-Length'),
+            ):
+                if resp.headers.get(source):
+                    response_headers[target] = resp.headers[source]
             return Response(
-                content=resp.content,
+                content=body,
+                status_code=resp.status_code,
                 media_type=content_type,
-                headers={
-                    'Access-Control-Allow-Origin': '*',
-                    'Accept-Ranges': 'bytes',
-                    'Cache-Control': 'no-store',
-                },
+                headers=response_headers,
             )
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"Upstream error: {str(e)}")
@@ -1056,11 +1221,18 @@ async def media_proxy(sid: str, url: str, request: Request):
 
     target_host = hostname
     cookie_dict = _cookie_dict_for(s['cookies'], target_host)
-    referer = s['referer'] or url
+    referer = s['referer'] or s['host'] or url
+    origin = s['host'] or f"{parsed.scheme}://{parsed.netloc}"
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        # Some signed CDNs (currently Vidoba's cdnz.quest transport) bind the
+        # URL to the browser request fingerprint used during capture.  Keep
+        # these values aligned with browser_extractor's Chromium context.
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                      'AppleWebKit/537.36 (KHTML, like Gecko) '
+                      'Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
         'Referer': referer,
-        'Origin': referer.rstrip('/'),
+        'Origin': origin.rstrip('/'),
         'Accept': '*/*',
     }
     range_hdr = request.headers.get('Range')
@@ -1068,15 +1240,45 @@ async def media_proxy(sid: str, url: str, request: Request):
         headers['Range'] = range_hdr
 
     try:
-        async with httpx.AsyncClient(
+        client = httpx.AsyncClient(
             follow_redirects=True, verify=False,
             timeout=httpx.Timeout(30.0, read=120.0),
-        ) as client:
-            resp = await client.get(url, headers=headers, cookies=cookie_dict)
-            ct = resp.headers.get('content-type', '')
-            body = resp.text
-            if ('mpegurl' in ct.lower() or url.endswith('.m3u8')
-                    or (body and body[:200].lstrip().startswith('#EXTM3U'))):
+        )
+        req = client.build_request(
+            'GET', url, headers=headers, cookies=cookie_dict)
+        resp = await client.send(req, stream=True)
+        ct = resp.headers.get('content-type', '')
+        media_name = parsed.path.lower().rsplit('/', 1)[-1]
+        looks_like_hls = (
+            'mpegurl' in ct.lower()
+            or media_name.endswith(('.m3u8', '.m3u'))
+            or media_name == 'master.txt'
+            or 'playlist' in media_name
+            or 'manifest' in media_name
+            or 'urlset' in media_name
+        )
+        byte_iterator = None
+        first_chunk = b''
+        collected_hls = None
+        if not looks_like_hls and (
+                not ct or 'octet-stream' in ct.lower() or ct.lower().startswith('text/')):
+            byte_iterator = resp.aiter_bytes(chunk_size=65536)
+            try:
+                first_chunk = await anext(byte_iterator)
+            except StopAsyncIteration:
+                first_chunk = b''
+            if first_chunk[:200].lstrip().startswith(b'#EXTM3U'):
+                looks_like_hls = True
+                remainder = b''.join([chunk async for chunk in byte_iterator])
+                collected_hls = first_chunk + remainder
+        if looks_like_hls:
+            try:
+                raw_body = collected_hls if collected_hls is not None else await resp.aread()
+                body = raw_body.decode('utf-8', 'replace')
+            finally:
+                await resp.aclose()
+                await client.aclose()
+            if body and body[:200].lstrip().startswith('#EXTM3U'):
                 rewritten = _rewrite_hls_to(
                     body,
                     url,
@@ -1087,20 +1289,48 @@ async def media_proxy(sid: str, url: str, request: Request):
                     media_type=_HLS_SEG_CT,
                     headers={'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store'},
                 )
-            return Response(
-                content=resp.content,
-                status_code=resp.status_code,
-                media_type=ct or 'application/octet-stream',
-                headers={
-                    'Access-Control-Allow-Origin': '*',
-                    'Accept-Ranges': 'bytes',
-                    'Content-Range': resp.headers.get('Content-Range', ''),
-                    'Cache-Control': 'no-store',
-                },
-            )
+            raise HTTPException(status_code=502, detail="Upstream HLS manifest was invalid")
+
+        response_headers = {
+            'Access-Control-Allow-Origin': '*',
+            'Accept-Ranges': resp.headers.get('Accept-Ranges', 'bytes'),
+            'Cache-Control': 'no-store',
+        }
+        for header in ('Content-Range', 'Content-Length', 'ETag', 'Last-Modified'):
+            value = resp.headers.get(header)
+            if value:
+                response_headers[header] = value
+
+        async def stream_body():
+            try:
+                if first_chunk:
+                    yield first_chunk
+                iterator = byte_iterator or resp.aiter_bytes(chunk_size=65536)
+                async for chunk in iterator:
+                    yield chunk
+            finally:
+                await resp.aclose()
+                await client.aclose()
+
+        return StreamingResponse(
+            stream_body(),
+            status_code=resp.status_code,
+            media_type=ct or 'application/octet-stream',
+            headers=response_headers,
+        )
     except httpx.HTTPError as e:
+        if 'resp' in locals():
+            await resp.aclose()
+        if 'client' in locals():
+            await client.aclose()
         raise HTTPException(status_code=502, detail=f"Upstream error: {str(e)}")
+    except HTTPException:
+        raise
     except Exception as e:
+        if 'resp' in locals():
+            await resp.aclose()
+        if 'client' in locals():
+            await client.aclose()
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1114,20 +1344,19 @@ def _rewrite_hls_to(text: str, manifest_url: str, proxy_for) -> str:
         if not stripped or stripped.startswith('#'):
             # Directives may carry a URI="..." attribute that also needs rewriting
             def _rewrite_uri(m, _base=base):
-                attr, inner = m.group(1), m.group(2)
-                return f'{attr}="{proxy_for(_up.urljoin(_base, inner))}"'
-            out.append(_re.sub(r'(URI=")([^"]+)(")', _rewrite_uri, line))
+                return f'URI="{proxy_for(_up.urljoin(_base, m.group(1)))}"'
+            out.append(_re.sub(r'URI="([^"]+)"', _rewrite_uri, line))
             continue
         out.append(proxy_for(_up.urljoin(base, stripped)))
     return "\n".join(out) + "\n"
 
 
-def _rewrite_hls(text: str, manifest_url: str, embed_host: str) -> str:
+def _rewrite_hls(text: str, manifest_url: str, embed_referer: str) -> str:
     """Rewrite every URL in an HLS playlist to go through /api/hls-seg."""
     return _rewrite_hls_to(
         text, manifest_url,
         lambda u: "/api/hls-seg?url=" + _up.quote(u, safe="")
-        + "&ref=" + _up.quote(embed_host, safe=""),
+        + "&ref=" + _up.quote(embed_referer, safe=""),
     )
 
 

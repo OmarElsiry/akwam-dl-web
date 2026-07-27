@@ -1,5 +1,11 @@
+import html as html_lib
 import re
+import warnings
+from urllib.parse import urljoin, urlparse
+
 from requests import get
+from requests.exceptions import SSLError
+from urllib3.exceptions import InsecureRequestWarning
 
 HTTP = 'https://'
 
@@ -11,6 +17,43 @@ def safe_get(url, **kwargs):
     kwargs.setdefault('headers', HEADERS)
     kwargs.setdefault('timeout', 30)
     return get(url, **kwargs)
+
+
+def _is_downet_url(url):
+    """Return True only for Downet's CDN itself, never lookalike hosts."""
+    hostname = (urlparse(url).hostname or '').lower().rstrip('.')
+    return hostname == 'downet.net' or hostname.endswith('.downet.net')
+
+
+def _extract_media_url(page_html, page_url):
+    """Extract an MP4/MKV URL from an Akwam watch or download page."""
+    media_url = r'([^"\']+\.(?:mp4|mkv)(?:\?[^"\']*)?)'
+    patterns = (
+        rf'<source\b[^>]*\bsrc=["\']{media_url}["\']',
+        rf'<a\b[^>]*\bhref=["\']{media_url}["\'][^>]*\bdownload\b',
+        rf'<a\b[^>]*\bhref=["\']{media_url}["\']',
+    )
+    for pattern in patterns:
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if match:
+            return urljoin(page_url, html_lib.unescape(match.group(1)))
+    return None
+
+
+def _get_downet_media(session, media_url, **kwargs):
+    """Fetch media with a host-scoped fallback for Downet's broken TLS chain."""
+    try:
+        return session.get(media_url, **kwargs)
+    except SSLError:
+        if not _is_downet_url(media_url):
+            raise
+
+        # Downet currently sends an incomplete certificate chain from some CDN
+        # shards. Keep verification enabled everywhere else and retry only this
+        # exact provider host so Akwam playback can still use byte ranges.
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', InsecureRequestWarning)
+            return session.get(media_url, verify=False, **kwargs)
 
 class AkwamAPI:
     def __init__(self, base_url="https://ak.sv/"):
@@ -94,7 +137,11 @@ class AkwamAPI:
             dl_url = dl_match.group(1) if dl_match else None
             size = dl_match.group(2).strip() if dl_match else 'Unknown'
 
-            link_id = watch_url or dl_url or ''
+            # Akwam watch pages expose every quality as <source> tags with the
+            # highest quality first, even when the selected watch URL belongs
+            # to a lower quality.  The matching download page is quality-
+            # specific, so use it for resolution and protected playback.
+            link_id = dl_url or watch_url or ''
 
             avail_qualities.append({
                 'quality': quality_label,
@@ -128,27 +175,7 @@ class AkwamAPI:
             r = safe_get(target_url)
             html = r.content.decode('utf-8', errors='replace')
 
-            # Check for <source src="...mp4" in video player
-            src_match = re.search(r'<source\s+src=["\']([^"\']+\.mp4)["\']', html)
-            if src_match:
-                return src_match.group(1)
-
-            # Check for <a href="...mp4" download
-            href_match = re.search(r'href=["\']([^"\']+\.mp4)["\'][^>]*download', html)
-            if href_match:
-                return href_match.group(1)
-
-            # Check for any .mp4 href
-            any_mp4 = re.search(r'href=["\']([^"\']+\.mp4)["\']', html)
-            if any_mp4:
-                return any_mp4.group(1)
-
-            # Check for any .mkv href
-            any_mkv = re.search(r'href=["\']([^"\']+\.mkv)["\']', html)
-            if any_mkv:
-                return any_mkv.group(1)
-
-            return None
+            return _extract_media_url(html, r.url)
         except Exception:
             return None
 
@@ -164,13 +191,9 @@ class AkwamAPI:
             r = session.get(target_url, timeout=30)
             html = r.content.decode('utf-8', errors='replace')
 
-            src_match = re.search(r'<source\s+src=["\']([^"\']+\.mp4)["\']', html)
-            if src_match:
-                return session, src_match.group(1), target_url
-
-            href_match = re.search(r'href=["\']([^"\']+\.mp4)["\'][^>]*download', html)
-            if href_match:
-                return session, href_match.group(1), target_url
+            media_url = _extract_media_url(html, r.url)
+            if media_url and _is_downet_url(media_url):
+                return session, media_url, r.url
 
             return None, None, None
         except Exception:
@@ -190,10 +213,25 @@ class AkwamAPI:
             headers['Range'] = range_header
 
         try:
-            resp = session.get(mp4_url, headers=headers, stream=True, timeout=(15, 300))
+            resp = _get_downet_media(
+                session,
+                mp4_url,
+                headers=headers,
+                stream=True,
+                timeout=(15, 300),
+            )
+            content_type = resp.headers.get('content-type', '').split(';', 1)[0].lower()
+            if not content_type or content_type == 'application/octet-stream':
+                media_path = urlparse(mp4_url).path.lower()
+                if media_path.endswith('.mp4'):
+                    content_type = 'video/mp4'
+                elif media_path.endswith('.mkv'):
+                    content_type = 'video/x-matroska'
+                else:
+                    content_type = 'application/octet-stream'
             info = {
                 'status_code': resp.status_code,
-                'content_type': resp.headers.get('content-type', 'video/mp4'),
+                'content_type': content_type,
                 'content_length': resp.headers.get('content-length'),
                 'content_range': resp.headers.get('content-range'),
                 'accept_ranges': resp.headers.get('accept-ranges', 'bytes'),

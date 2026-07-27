@@ -273,6 +273,16 @@ def _extract_metadata(html: str) -> dict:
             ld = json.loads(ld_m.group(1))
         except json.JSONDecodeError:
             ld = {}
+        if isinstance(ld, dict) and isinstance(ld.get("@graph"), list):
+            # Wecima wraps the useful Movie/TVSeries schema in @graph.  Prefer
+            # the entry carrying media metadata instead of the outer WebPage.
+            candidates = [x for x in ld["@graph"] if isinstance(x, dict)]
+            ld = next(
+                (x for x in candidates if x.get("@type") in (
+                    "Movie", "TVSeries", "TVEpisode", "VideoObject"
+                )),
+                next((x for x in candidates if x.get("numberOfEpisodes")), {}),
+            )
         if isinstance(ld, dict):
             meta["name"] = ld.get("name", "")
             meta["description"] = ld.get("description", "")
@@ -464,15 +474,17 @@ def get_series_detail(url: str) -> dict:
 
     metadata = _extract_metadata(html)
     post_id = _extract_series_post_id(html)
-    num_seasons = metadata.get("numberOfSeasons") or 1
+    seasons = _extract_seasons(html)
 
     # Parse episodes directly from the page
     episodes = _extract_episodes_from_html(html)
 
-    seasons = []
-    if num_seasons:
-        for s in range(1, int(num_seasons) + 1):
-            seasons.append({"season_number": s, "name": f"Season {s}"})
+    if not seasons:
+        num_seasons = metadata.get("numberOfSeasons") or 1
+        seasons = [
+            {"season_number": s, "name": f"Season {s}"}
+            for s in range(1, int(num_seasons) + 1)
+        ]
 
     return {
         "metadata": metadata,
@@ -483,8 +495,30 @@ def get_series_detail(url: str) -> dict:
 
 
 def _extract_series_post_id(html: str) -> str | None:
+    # This is the series id used by /ajax/Episode.  A generic data-post value
+    # elsewhere on the page is only the reaction/post id and returns no data.
+    m = re.search(
+        r'class="[^"]*SeasonsEpisodes[^"]*"[^>]*data-id="(\d+)"', html
+    )
+    if m:
+        return m.group(1)
     m = re.search(r'data-post="(\d+)"', html)
     return m.group(1) if m else None
+
+
+def _extract_seasons(html: str) -> list[dict]:
+    """Extract actual season numbers (which need not start at season 1)."""
+    found = []
+    seen = set()
+    for m in re.finditer(
+        r'class="[^"]*SeasonsEpisodes[^"]*"[^>]*data-season="season-(\d+)"',
+        html,
+    ):
+        number = int(m.group(1))
+        if number not in seen:
+            seen.add(number)
+            found.append({"season_number": number, "name": f"Season {number}"})
+    return found
 
 
 def _extract_episodes_from_html(html: str) -> list[dict]:
@@ -517,7 +551,7 @@ def _extract_episodes_from_html(html: str) -> list[dict]:
 def get_season_episodes(post_id: str, season: int = 1) -> list[dict]:
     """Load episodes for a given season via AJAX."""
     html = _post_form(BASE + "/ajax/Episode", {
-        "season": str(season),
+        "season": f"season-{season}",
         "post_id": post_id,
     })
     if not html:
@@ -525,7 +559,9 @@ def get_season_episodes(post_id: str, season: int = 1) -> list[dict]:
 
     episodes = []
     for m in re.finditer(
-        r'<a[^>]*href="(/watch/[^"]+)"[^>]*>(.*?)</a>', html, re.DOTALL
+        r'<a[^>]*href="((?:https?://[^"/]+)?/watch/[^"]+)"[^>]*>(.*?)</a>',
+        html,
+        re.DOTALL,
     ):
         href = m.group(1)
         if not href.startswith("http"):

@@ -8,7 +8,7 @@ we use multiple strategies:
 """
 
 import re, json, os
-from urllib.parse import unquote
+from urllib.parse import quote_plus, urlsplit, urlunsplit
 
 FALLBACK_DOMAIN = "https://shhahhid4u.com"
 
@@ -17,6 +17,22 @@ HEADERS = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.5',
 }
+
+
+def _is_challenge_page(html):
+    """Distinguish a blocking Cloudflare page from its injected telemetry script.
+
+    Cloudflare appends ``challenge-platform/scripts/jsd`` to successful pages
+    too, so that script path by itself is not evidence that access is blocked.
+    """
+    return bool(re.search(
+        r'<title[^>]*>\s*(?:Just a moment|Attention Required)|'
+        r'id=["\']cf-error-details["\']|'
+        r'class=["\'][^"\']*(?:cf-turnstile|challenge-form)[^"\']*["\']|'
+        r'id=["\']challenge-(?:form|stage|running)["\']',
+        html or '', re.IGNORECASE
+    ))
+
 
 # Try multiple fetch strategies
 def _fetch(url, timeout=15):
@@ -45,9 +61,10 @@ def _fetch(url, timeout=15):
     for name, fn in strategies:
         try:
             r = fn()
-            if r.status_code == 200:
+            if r.status_code == 200 and not _is_challenge_page(r.text):
                 return r.text
-            last_error = f'{name}: HTTP {r.status_code}'
+            suffix = ' provider challenge' if _is_challenge_page(r.text) else ''
+            last_error = f'{name}: HTTP {r.status_code}{suffix}'
         except Exception as e:
             last_error = f'{name}: {type(e).__name__}: {str(e)[:80]}'
 
@@ -109,7 +126,7 @@ def search(query):
     seen = set()
     results = []
     source_reached = False
-    q_encoded = query.replace(' ', '+')
+    q_encoded = quote_plus(query)
 
     # Strategy 1: Firecrawl API (handles Cloudflare)
     try:
@@ -119,13 +136,13 @@ def search(query):
             raise RuntimeError('FIRECRAWL_API_KEY is not configured')
         fc = Firecrawl(api_key=api_key)
         for url in [
-            f'{FALLBACK_DOMAIN}/?s={q_encoded}',
+            f'{FALLBACK_DOMAIN}/search?s={q_encoded}',
             f'{FALLBACK_DOMAIN}/category-search-api-v2?q={q_encoded}',
         ]:
             try:
                 result = fc.scrape(url, formats=['html'])
                 html = result.get('html', '') if isinstance(result, dict) else getattr(result, 'html', '') or ''
-                if html:
+                if html and not _is_challenge_page(html):
                     source_reached = True
                     links = _extract_links(html)
                     for link in links:
@@ -149,12 +166,12 @@ def search(query):
     try:
         from curl_cffi import requests as curl_req
         r = curl_req.get(
-            f'{FALLBACK_DOMAIN}/?s={q_encoded}',
+            f'{FALLBACK_DOMAIN}/search?s={q_encoded}',
             impersonate='chrome120',
             headers=HEADERS,
             timeout=15
         )
-        if r.status_code == 200:
+        if r.status_code == 200 and not _is_challenge_page(r.text):
             source_reached = True
             html = r.text
             links = _extract_links(html)
@@ -185,10 +202,10 @@ def search(query):
                 )
                 page = context.new_page()
                 try:
-                    response = page.goto(f'{FALLBACK_DOMAIN}/?s={q_encoded}', wait_until='domcontentloaded', timeout=20000)
+                    response = page.goto(f'{FALLBACK_DOMAIN}/search?s={q_encoded}', wait_until='domcontentloaded', timeout=20000)
                     page.wait_for_timeout(3000)
                     html = page.content()
-                    if response and response.ok and 'Just a moment' not in html:
+                    if response and response.ok and not _is_challenge_page(html):
                         source_reached = True
                 except Exception:
                     html = ''
@@ -221,6 +238,14 @@ def _detect_type(href):
     return None
 
 
+def _related_url(content_url, route, slug):
+    """Build a related provider URL without switching the content's host."""
+    parsed = urlsplit(content_url)
+    if parsed.scheme in ('http', 'https') and parsed.netloc:
+        return urlunsplit((parsed.scheme, parsed.netloc, f'/{route}/{slug}', '', ''))
+    return f'{FALLBACK_DOMAIN}/{route}/{slug}'
+
+
 def get_content_servers(content_url):
     """Extract watch servers from a Sahid4u page.
 
@@ -235,7 +260,7 @@ def get_content_servers(content_url):
     if '/watch/' in content_url:
         watch_url = content_url.rstrip('/')
     else:
-        watch_url = f'{FALLBACK_DOMAIN}/watch/{slug}'
+        watch_url = _related_url(content_url, 'watch', slug)
 
     try:
         html = _fetch(watch_url, timeout=12)
@@ -278,10 +303,14 @@ def get_content_info(content_url):
     slug_m = re.search(r'/(?:film|episode)/([^/?#]+)', content_url)
     slug = slug_m.group(1) if slug_m else ''
 
+    links = _extract_links(html, f'{urlsplit(content_url).scheme}://{urlsplit(content_url).netloc}')
+    watch_links = [link['href'] for link in links if '/watch/' in link['href']]
+    download_links = [link['href'] for link in links if '/download/' in link['href']]
+
     return {
         'title': title,
-        'watch_url': f'{FALLBACK_DOMAIN}/watch/{slug}' if slug else None,
-        'download_url': f'{FALLBACK_DOMAIN}/download/{slug}' if slug else None,
+        'watch_url': watch_links[0] if watch_links else (_related_url(content_url, 'watch', slug) if slug else None),
+        'download_url': download_links[0] if download_links else (_related_url(content_url, 'download', slug) if slug else None),
     }
 
 
@@ -330,8 +359,8 @@ def get_content_servers_and_downloads(content_url):
     download_url = None
     if slug_m:
         slug = slug_m.group(1)
-        watch_url = f'{FALLBACK_DOMAIN}/watch/{slug}'
-        download_url = f'{FALLBACK_DOMAIN}/download/{slug}'
+        watch_url = _related_url(content_url, 'watch', slug)
+        download_url = _related_url(content_url, 'download', slug)
 
     try:
         info = get_content_info(content_url)

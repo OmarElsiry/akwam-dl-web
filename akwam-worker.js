@@ -160,7 +160,10 @@ const AkwamWorker = (() => {
             const dlUrl = dlMatch ? dlMatch[1] : null;
             const size = dlMatch ? dlMatch[2].trim() : 'Unknown';
 
-            const link_id = watchUrl || dlUrl || '';
+            // Watch pages list all qualities with 1080p first. The matching
+            // download page is scoped to the selected quality, so resolve it
+            // first to avoid returning 1080p for 720p/480p selections.
+            const link_id = dlUrl || watchUrl || '';
 
             qualities.push({
                 quality: qualityLabel,
