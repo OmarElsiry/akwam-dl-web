@@ -824,6 +824,10 @@ async def resolve_embed(req: ResolveEmbedRequest):
             else:
                 # Standard JS-only HLS: capture player state/cookies on demand.
                 response["proxy_url"] = f"/api/hls-proxy?url={quote(req.url, safe='')}"
+                if req.referer:
+                    response["proxy_url"] += (
+                        f"&referer={quote(req.referer, safe='')}"
+                    )
         else:
             # Direct files are also proxied so CORS, TLS and Referer policy are
             # consistent across hosts and byte-range seeking keeps working.

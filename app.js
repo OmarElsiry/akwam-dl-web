@@ -87,7 +87,7 @@ function playableServers(servers) {
     })).filter(server => server.url);
 }
 
-function renderPlayerFrame(id, url, title, fallback = '') {
+function renderPlayerFrame(id, url, title, fallback = '', referer = '') {
     return `<div class="embed-frame-wrap">
         <div class="embed-frame-stage">
             <iframe id="${escapeHtml(id)}" src="${escapeHtml(url)}" title="${escapeHtml(title)}"
@@ -96,7 +96,7 @@ function renderPlayerFrame(id, url, title, fallback = '') {
         </div>
         <div class="player-resolve-tools" style="display:flex;align-items:center;justify-content:center;gap:.65rem;flex-wrap:wrap;padding:.65rem;">
             <button type="button" class="btn-secondary btn-sm player-resolve-btn"
-                data-frame-id="${escapeHtml(id)}" data-src="${escapeHtml(url)}"
+                data-frame-id="${escapeHtml(id)}" data-src="${escapeHtml(url)}" data-referer="${escapeHtml(referer)}"
                 onclick="window.vortexResolvePlayerStream(this)">PLAY DIRECT</button>
             <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer"
                 class="btn-secondary btn-sm player-open-link" style="text-decoration:none;">OPEN HOST</a>
@@ -153,6 +153,7 @@ function switchPlayerServer(btn, frameId) {
         const status = wrap?.querySelector('.player-resolve-status');
         if (resolveBtn) {
             resolveBtn.dataset.src = src;
+            resolveBtn.dataset.referer = safeRemoteUrl(btn.dataset.referer);
             resolveBtn.disabled = false;
         }
         if (openLink) openLink.href = src;
@@ -191,6 +192,7 @@ function loadHlsLibrary() {
 
 window.vortexResolvePlayerStream = async function(button) {
     const embedUrl = safeRemoteUrl(button.dataset.src);
+    const referer = safeRemoteUrl(button.dataset.referer);
     const frameId = button.dataset.frameId;
     const frame = document.getElementById(frameId);
     const wrap = frame?.closest('.embed-frame-wrap');
@@ -208,7 +210,7 @@ window.vortexResolvePlayerStream = async function(button) {
         const response = await fetch('/api/resolve-embed', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: embedUrl }),
+            body: JSON.stringify({ url: embedUrl, referer: referer || null }),
             signal: controller.signal,
         });
         const data = await response.json();
@@ -1269,7 +1271,7 @@ function egyDeadRenderWatch(data, item) {
         let serverBtns = '';
         if (servers.length > 1) {
             serverBtns = servers.map((s, i) =>
-                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${escapeHtml(s.url)}" onclick="egyDeadSwitchServer(this)">${escapeHtml(s.name)}</button>`
+                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${escapeHtml(s.url)}" data-referer="${escapeHtml(item.url)}" onclick="egyDeadSwitchServer(this)">${escapeHtml(s.name)}</button>`
             ).join('');
         }
 
@@ -1315,7 +1317,7 @@ function egyDeadRenderWatch(data, item) {
         dom.modalList.innerHTML = `
             <div class="watch-container">
                 ${serverBtns ? `<div class="server-row">${serverBtns}</div>` : ''}
-                ${renderPlayerFrame('egyDeadFrame', servers[0].url, `EgyDead — ${servers[0].name}`)}
+                ${renderPlayerFrame('egyDeadFrame', servers[0].url, `EgyDead — ${servers[0].name}`, '', item.url)}
                 ${downloadsHtml}
                 <a href="${item.url}" target="_blank" class="btn-secondary btn-open-page">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
@@ -1489,7 +1491,7 @@ async function faselhdShowDetail(item) {
         let serverBtns = '';
         if (servers.length > 1) {
             serverBtns = servers.map((s, i) =>
-                        `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${escapeHtml(s.url)}" onclick="faselhdSwitchServer(this)">${escapeHtml(s.name || `Server ${i + 1}`)}</button>`
+                        `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${escapeHtml(s.url)}" data-referer="${escapeHtml(item.url)}" onclick="faselhdSwitchServer(this)">${escapeHtml(s.name || `Server ${i + 1}`)}</button>`
                     ).join('');
         }
 
@@ -1513,7 +1515,7 @@ async function faselhdShowDetail(item) {
         dom.modalList.innerHTML = `
             <div class="watch-container">
                 ${serverBtns ? `<div class="server-row">${serverBtns}</div>` : ''}
-                ${renderPlayerFrame('faselhdFrame', servers[0].url, `FaselHD — ${servers[0].name}`)}
+                ${renderPlayerFrame('faselhdFrame', servers[0].url, `FaselHD — ${servers[0].name}`, '', item.url)}
                 ${downloadsHtml}
             </div>`;
     } else if (downloads.length > 0) {
@@ -1647,7 +1649,7 @@ async function wecimaShowDetail(item) {
     if (servers.length > 0) {
         serverBtns = servers.map((s, i) => `
             <div class="server-btn-wrap ${i === 0 ? 'active' : ''}">
-                <button class="server-btn" data-src="${escapeHtml(s.url)}" onclick="wecimaSwitchServer(this)">
+                <button class="server-btn" data-src="${escapeHtml(s.url)}" data-referer="${escapeHtml(item.url)}" onclick="wecimaSwitchServer(this)">
                     ${escapeHtml(s.name)}
                 </button>
                 <a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer" class="server-ext-link" title="Open in new tab">
@@ -1685,7 +1687,7 @@ async function wecimaShowDetail(item) {
                         <a href="${escapeHtml(servers[0].url)}" target="_blank" rel="noopener noreferrer" class="btn-primary" style="text-decoration:none;display:inline-block;">
                             OPEN IN NEW TAB
                         </a>
-                    </div>`)}
+                    </div>`, item.url)}
                 ${downloadsHtml}
             </div>`;
 
@@ -1822,7 +1824,7 @@ async function sahid4uShowWatch(item) {
     let serverBtns = '';
     if (servers.length > 1) {
         serverBtns = servers.map((s, i) =>
-            `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${escapeHtml(s.url)}" onclick="sahid4uSwitchServer(this)">${escapeHtml(s.name)}</button>`
+            `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${escapeHtml(s.url)}" data-referer="${escapeHtml(item.url)}" onclick="sahid4uSwitchServer(this)">${escapeHtml(s.name)}</button>`
         ).join('');
     }
 
@@ -1847,7 +1849,7 @@ async function sahid4uShowWatch(item) {
         dom.modalList.innerHTML = `
             <div class="watch-container">
                 ${serverBtns ? `<div class="server-row">${serverBtns}</div>` : ''}
-                ${renderPlayerFrame('sahid4uFrame', servers[0].url, `Sahid4u — ${servers[0].name}`)}
+                ${renderPlayerFrame('sahid4uFrame', servers[0].url, `Sahid4u — ${servers[0].name}`, '', item.url)}
                 ${qualitiesHtml}
                 <a href="${item.url}" target="_blank" class="btn-secondary btn-open-page">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
@@ -1996,12 +1998,12 @@ async function royaldramaPlayEpisode(idx) {
     if (servers.length > 0) {
         if (servers.length > 1) {
             serverBtns = servers.map((s, i) =>
-                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${escapeHtml(s.url)}" onclick="royaldramaSwitchServer(this)">${escapeHtml(s.name)}</button>`
+                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${escapeHtml(s.url)}" data-referer="${escapeHtml(ep.url)}" onclick="royaldramaSwitchServer(this)">${escapeHtml(s.name)}</button>`
             ).join('');
         }
         playerHtml = `
             ${serverBtns ? `<div class="server-row">${serverBtns}</div>` : ''}
-            ${renderPlayerFrame('royaldramaFrame', servers[0].url, `Royal Drama — ${servers[0].name}`)}
+            ${renderPlayerFrame('royaldramaFrame', servers[0].url, `Royal Drama — ${servers[0].name}`, '', ep.url)}
         `;
     } else {
         playerHtml = `
@@ -2035,12 +2037,12 @@ async function royaldramaPlay(url, name, poster, servers = []) {
     if (servers.length > 0) {
         if (servers.length > 1) {
             serverBtns = servers.map((s, i) =>
-                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${escapeHtml(s.url)}" onclick="royaldramaSwitchServer(this)">${escapeHtml(s.name)}</button>`
+                `<button class="server-btn ${i === 0 ? 'active' : ''}" data-src="${escapeHtml(s.url)}" data-referer="${escapeHtml(url)}" onclick="royaldramaSwitchServer(this)">${escapeHtml(s.name)}</button>`
             ).join('');
         }
         playerHtml = `
             ${serverBtns ? `<div class="server-row">${serverBtns}</div>` : ''}
-            ${renderPlayerFrame('royaldramaFrame', servers[0].url, `Royal Drama — ${servers[0].name}`)}
+            ${renderPlayerFrame('royaldramaFrame', servers[0].url, `Royal Drama — ${servers[0].name}`, '', url)}
         `;
     } else {
         playerHtml = `

@@ -21,6 +21,22 @@ def check_player_modal_teardown():
     assert "teardownPlayerContent(dom.mainModal);" in source
 
 
+def check_provider_referers_reach_direct_player():
+    source = Path(__file__).with_name("app.js").read_text(encoding="utf-8")
+    assert 'data-referer="${escapeHtml(referer)}"' in source
+    assert "const referer = safeRemoteUrl(button.dataset.referer);" in source
+    assert "JSON.stringify({ url: embedUrl, referer: referer || null })" in source
+    assert "resolveBtn.dataset.referer = safeRemoteUrl(btn.dataset.referer);" in source
+    for frame_id in (
+        "egyDeadFrame", "faselhdFrame", "wecimaFrame",
+        "sahid4uFrame", "royaldramaFrame",
+    ):
+        assert f"renderPlayerFrame('{frame_id}'" in source
+    assert source.count('data-referer="${escapeHtml(item.url)}"') >= 4
+    assert 'data-referer="${escapeHtml(ep.url)}"' in source
+    assert 'data-referer="${escapeHtml(url)}"' in source
+
+
 def check_hls_rewrite():
     playlist = """#EXTM3U
 #EXT-X-KEY:METHOD=AES-128,URI="key.bin"
@@ -254,8 +270,10 @@ def check_resolve_embed_returns_playable_proxy_urls():
             api_index.video_resolver.resolve = hls_result
             hls = await api_index.resolve_embed(api_index.ResolveEmbedRequest(
                 url="https://hgcloud.to/e/1",
+                referer="https://wecima.cx/watch/example",
             ))
             assert hls["proxy_url"].startswith("/api/hls-proxy?")
+            assert "referer=https%3A%2F%2Fwecima.cx%2Fwatch%2Fexample" in hls["proxy_url"]
         finally:
             api_index.video_resolver.resolve = original_resolve
 
@@ -409,6 +427,7 @@ def check_media_proxy_streams_and_forwards_range():
 
 def run():
     check_player_modal_teardown()
+    check_provider_referers_reach_direct_player()
     check_hls_rewrite()
     check_manifest_candidate_prefers_stable_variants()
     check_hls_proxy_uses_redirected_player_origin()

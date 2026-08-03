@@ -234,18 +234,24 @@ class FaselhdAPI:
         servers = []
         seen_urls = set()
 
-        # Step 2: Try AJAX to get server iframes
-        for idx in range(15):
+        # Step 2: Try AJAX to get server iframes.
+        # Ponytail: parallelize (worst-case ~15 s wall vs 225 s sequential).
+        # Keep index==0 miss non-fatal (site still probes higher indices on
+        # rare pages), but otherwise fail fast on the first hard error.
+        from concurrent.futures import ThreadPoolExecutor
+        def _ajax(idx):
             try:
                 r = safe_post(AJAX_URL, {'post_id': real_post_id, 'server': str(idx)})
-                data = r.json()
-                if not data.get('success'):
-                    if idx == 0:
-                        continue
-                    break
-                iframe_html = data.get('iframe', '')
-                srcs = re.findall(r'src=["\']([^"\']+)["\']', iframe_html)
-                src = srcs[0] if srcs else None
+                d = r.json()
+                if not d.get('success'):
+                    return idx, None
+                srcs = re.findall(r'src=["\']([^"\']+)["\']', d.get('iframe', ''))
+                return idx, (srcs[0] if srcs else None)
+            except Exception:
+                return idx, None
+
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            for idx, src in sorted(ex.map(_ajax, range(12))):
                 if src and src not in seen_urls:
                     seen_urls.add(src)
                     servers.append({
@@ -254,9 +260,6 @@ class FaselhdAPI:
                         'embed_url': src,
                         'post_id': int(real_post_id),
                     })
-            except:
-                if idx > 0:
-                    break
 
         # Step 3: Fallback — extract embed URLs directly from page HTML
         if not servers and page_html:

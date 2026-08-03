@@ -246,6 +246,85 @@ def _related_url(content_url, route, slug):
     return f'{FALLBACK_DOMAIN}/{route}/{slug}'
 
 
+def _session_with_watch_page(watch_url, timeout=12):
+    """Fetch the /watch/ page with a real HTTP session so the cookies set by
+    the site are available for the follow-up JSON POSTs. Returns a
+    (session, html) tuple; ``html`` is guaranteed non-empty on success."""
+    from curl_cffi import requests as creq
+    s = creq.Session()
+    r = s.get(
+        watch_url,
+        impersonate='chrome120',
+        headers=HEADERS,
+        timeout=timeout,
+        allow_redirects=True,
+    )
+    if r.status_code != 200:
+        raise RuntimeError(f'sahid4u watch HTTP {r.status_code}')
+    html = r.text
+    if _is_challenge_page(html):
+        raise RuntimeError('sahid4u watch page is behind challenge')
+    return s, html
+
+
+def _parse_server_key_names(html):
+    """Extract ordered (server_key, display_name) pairs from the /watch/ page."""
+    pairs = []
+    seen = set()
+    for m in re.finditer(r'data-server-key="([a-f0-9]{8,64})"', html):
+        key = m.group(1)
+        if key in seen:
+            continue
+        seen.add(key)
+        # Name lives in an <img title="..."> near the button.
+        window = html[max(0, m.start()-600):m.start()+600]
+        titles = re.findall(r'title="([^"<]{1,64})"', window)
+        name = titles[-1] if titles else f'Server {len(pairs) + 1}'
+        pairs.append({'key': key, 'name': name})
+    return pairs
+
+
+def _issue_player_url(session, watch_url, html, server_key, timeout=12):
+    """POST /secure-watch/issue for one server key and return its player_url."""
+    page_token_m = re.search(r'pageToken\s*=\s*"([^"]+)"', html)
+    csrf_m = re.search(r'csrfToken\s*=\s*"([^"]+)"', html)
+    issue_m = re.search(r'issueUrl\s*=\s*"([^"]+)"', html)
+    if not (page_token_m and csrf_m):
+        return None, 'missing pageToken/csrfToken'
+    page_token = page_token_m.group(1)
+    csrf = csrf_m.group(1)
+    if issue_m:
+        issue_url = issue_m.group(1).replace('\\/', '/')
+    else:
+        p = urlsplit(watch_url)
+        issue_url = urlunsplit((p.scheme, p.netloc, '/secure-watch/issue', '', ''))
+    # curl_cffi headers are latin-1; quote the Arabic path before sending.
+    from urllib.parse import quote as _q
+    safe_referer = _q(watch_url, safe=':/?#[]@!$&\'()*+,;=%')
+    resp = session.post(
+        issue_url,
+        json={'page_token': page_token, 'server_key': server_key},
+        headers={
+            **HEADERS,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrf,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Referer': safe_referer,
+            'Origin': f'{urlsplit(watch_url).scheme}://{urlsplit(watch_url).netloc}',
+        },
+        timeout=timeout,
+        impersonate='chrome120',
+    )
+    if resp.status_code != 200:
+        return None, f'HTTP {resp.status_code}'
+    data = resp.json()
+    player_url = data.get('player_url') or data.get('url')
+    if not player_url:
+        return None, 'no player_url'
+    return player_url, None
+
+
 def get_content_servers(content_url):
     """Extract watch servers from a Sahid4u page.
 
@@ -262,21 +341,38 @@ def get_content_servers(content_url):
     else:
         watch_url = _related_url(content_url, 'watch', slug)
 
+    # New flow: /watch/ page ships server keys + CSRF; each embed is only
+    # revealed via POST /secure-watch/issue with a session cookie.
     try:
-        html = _fetch(watch_url, timeout=12)
+        session, html = _session_with_watch_page(watch_url)
     except Exception:
         return []
 
-    # rawServers JSON
+    keys = _parse_server_key_names(html)
+    if keys:
+        servers = []
+        for idx, info in enumerate(keys):
+            player_url, _err = _issue_player_url(session, watch_url, html, info['key'])
+            if player_url:
+                servers.append({
+                    'name': info['name'],
+                    'url': player_url,
+                    'key': info['key'],
+                    'embed_url': player_url,
+                })
+        if servers:
+            return servers
+
+    # Legacy rawServers JSON
     m = re.search(r'let\s+rawServers\s*=\s*(\[[\s\S]*?\])\s*;', html, re.IGNORECASE)
     if m:
         try:
-            servers = json.loads(m.group(1))
+            raw = json.loads(m.group(1))
             return [{
                 'name': s.get('name', f'Server {i+1}'),
                 'url': s.get('url', ''),
                 'id': s.get('id'),
-            } for i, s in enumerate(servers)]
+            } for i, s in enumerate(raw)]
         except json.JSONDecodeError:
             pass
 
@@ -375,42 +471,9 @@ def get_content_servers_and_downloads(content_url):
     qualities = []
     if watch_url:
         try:
-            html = _fetch(watch_url, timeout=12)
-            if html:
-                raw_servers = None
-                m = re.search(r'let\s+rawServers\s*=\s*(\[[\s\S]*?\])\s*;', html, re.IGNORECASE)
-                if m:
-                    try:
-                        raw_servers = json.loads(m.group(1))
-                    except json.JSONDecodeError:
-                        pass
-                if raw_servers is None:
-                    nested = re.search(
-                        r'''let\s+servers\s*=\s*JSON\.parse\(\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)')\s*\)\s*;''',
-                        html, re.IGNORECASE
-                    )
-                    if nested:
-                        try:
-                            payload = nested.group(1)
-                            if payload is not None:
-                                payload = json.loads(f'"{payload}"')
-                            else:
-                                payload = nested.group(2).replace("\\'", "'")
-                            raw_servers = json.loads(payload)
-                        except (json.JSONDecodeError, TypeError):
-                            pass
-                if isinstance(raw_servers, list):
-                    servers = [{
-                        'name': s.get('name', f'Server {i+1}'),
-                        'url': s.get('url', ''),
-                        'id': s.get('id'),
-                    } for i, s in enumerate(raw_servers) if isinstance(s, dict)]
-                if not servers:
-                    iframes = re.findall(r'<iframe[^>]+src=["\']([^"\']+)["\']', html, re.IGNORECASE)
-                    if iframes:
-                        servers = [{'name': 'Embed', 'url': iframes[0]}]
+            servers = get_content_servers(watch_url)
         except Exception:
-            pass
+            servers = []
 
     if download_url:
         try:
