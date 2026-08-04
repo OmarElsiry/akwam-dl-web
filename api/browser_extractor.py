@@ -468,6 +468,143 @@ def capture_hls_manifest(embed_url: str, referer: str = None, cookies: list = No
     return None
 
 
+_SAHID4U_HOSTS = ('shahie4u.co', 'shhahhid4u.com', 'sahid4u.com', 'shaaheid4u.',
+                  'shahid4u.', 'sahid4u.')
+
+
+def _host_is_sahid4u(url: str) -> bool:
+    host = urlparse(url).netloc.lower()
+    return any(d in host for d in _SAHID4U_HOSTS)
+
+
+def capture_sahid4u_watch(watch_url: str, timeout_ms: int = 30000) -> Optional[str]:
+    """Play a Sahid4u /watch/ page for real: click the first server button,
+    follow the signed one-time ``/secure-watch/{token}`` iframe, and capture
+    the actual video URL the nested player requests.
+
+    The secure-watch URL is single-use and its POST is behaviour-gated, so
+    only a real Chromium session passes. Returns ``(video_url, inner_origin)``
+    or None.
+    """
+    from playwright.sync_api import sync_playwright
+
+    captured = set()
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+                viewport={"width": 1280, "height": 720},
+                locale="ar-EG",
+                timezone_id="Africa/Cairo",
+            )
+            page = context.new_page()
+
+            BLOCKED = (
+                'doubleclick', 'googlesyndication', 'google-analytics',
+                'googletagmanager', 'facebook.net', 'exoclick', 'popads',
+                'adsterra', 'propellerads', 'melbet', 'waktogel',
+            )
+
+            def on_request(req):
+                u = req.url
+                if any(d in u for d in BLOCKED):
+                    return
+                captured.add(u)
+
+            page.on("request", on_request)
+
+            # The behaviour telemetry reports navigator.webdriver; hide it.
+            page.add_init_script(
+                "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+            )
+
+            loaded = False
+            try:
+                page.goto(watch_url, wait_until="commit", timeout=45000)
+                loaded = True
+            except Exception:
+                pass
+            if not loaded:
+                browser.close()
+                return None
+
+            # Real click: the dwell (>1.3s) + pointer telemetry gate requires it.
+            try:
+                page.wait_for_selector('[data-server-key]', timeout=15000)
+                page.wait_for_timeout(1700)
+                btn = page.query_selector('[data-server-key]')
+                box = btn.bounding_box()
+                if box:
+                    cx = box['x'] + box['width'] / 2
+                    cy = box['y'] + box['height'] / 2
+                    page.mouse.move(cx - 50, cy - 30)
+                    page.wait_for_timeout(120)
+                    page.mouse.move(cx, cy)
+                    page.mouse.click(cx, cy)
+                else:
+                    btn.click()
+            except Exception:
+                browser.close()
+                return None
+
+            # Wait for the nested video request made from any frame.
+            FONT_EXTS = ('.woff', '.woff2', '.ttf', '.eot', '.otf')
+            MEDIA_HINTS = ('.mp4', '.m3u8', 'urlset', 'master.txt', '.webm',
+                           '/hls2/', '/hls3/', '/stream/', '/play/')
+            inner_origin = None
+            deadline = time.time() + 40
+            video_url = None
+            nudged = False
+            while time.time() < deadline and not video_url:
+                for u in list(captured):
+                    lu = u.lower().split('?', 1)[0]
+                    if lu.endswith(FONT_EXTS):
+                        continue
+                    if 'shahie4u.co' in lu and '/secure-watch/' not in lu:
+                        continue
+                    if any(x in lu for x in MEDIA_HINTS) \
+                       and not any(d in lu for d in BLOCKED):
+                        video_url = u
+                        break
+                if not video_url:
+                    try:
+                        for f in page.frames:
+                            fu = f.url or ''
+                            if f != page.main_frame and '/secure-watch/' in fu:
+                                inner_origin = _embed_host(fu)
+                                # Force inner player to start loading.
+                                if not nudged:
+                                    try:
+                                        f.evaluate(
+                                            "document.querySelectorAll('video').forEach("
+                                            "v=>{try{v.muted=true;v.play()}catch(e){}});")
+                                    except Exception:
+                                        pass
+                                    nudged = True
+                                break
+                        # generic nudge on current page
+                        page.evaluate(
+                            "document.querySelectorAll('video').forEach("
+                            "v=>{try{v.muted=true;v.play()}catch(e){}});")
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(800)
+
+            browser.close()
+            if video_url:
+                return video_url, inner_origin
+            return None
+    except Exception as e:
+        print(f"[Sahid4u] watch capture failed: {e}")
+        return None
+
+
 def resolve_embed_via_browser(embed_url: str, referer: str = None, cookies: list = None,
                                timeout_ms: int = 15000) -> Optional[str]:
     """

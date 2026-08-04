@@ -814,7 +814,15 @@ async def resolve_embed(req: ResolveEmbedRequest):
                 f"/api/media-proxy?sid={sid}&url={quote(target, safe='')}"
             )
         elif result.ext == 'm3u8':
-            if used_specific_resolver:
+            from .browser_extractor import _host_is_sahid4u
+            if _host_is_sahid4u(req.url):
+                # Sahid4u capture already produced the final signed master; the
+                # generic hls-proxy browser pass would rerun a consumed click.
+                response["proxy_url"] = (
+                    f"/api/hls-seg?url={quote(result.url, safe='')}"
+                    f"&ref={quote(embed_host + '/', safe='')}"
+                )
+            elif used_specific_resolver:
                 # Govid already yielded the final manifest; do not repeat the
                 # much slower browser extraction on its wrapper URL.
                 response["proxy_url"] = (

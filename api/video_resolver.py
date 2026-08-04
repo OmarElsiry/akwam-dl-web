@@ -92,6 +92,9 @@ class VideoResolver:
         'miiiixdrop.net', 'fastvid.cam', 'fastved.cam', 'vinovo.to',
         'vipserver.liiivideo.com', 'lulustream.com', 'shaaheid4u.rpmvip.com',
         'doodstream.com', 'mixdrop.ps', 'mixdrop.top', 'vidtube.pro',
+        # Sahid4u watch pages gate the player POST behind browser telemetry;
+        # only the click-driven browser extractor passes.
+        'shahie4u.co', 'shhahhid4u.com', 'sahid4u.com', 'shahid4u.',
     ]
 
     def _is_js_only(self, url: str) -> bool:
@@ -102,7 +105,23 @@ class VideoResolver:
     def _resolve_sync(self, embed_url: str, cookies: list = None,
                       referer: str = None) -> Optional[ResolvedVideo]:
         """Synchronous resolution using yt-dlp."""
-        # Skip yt-dlp for known JS-only hosts — go straight to fallback
+        # Sahid4u watch-page: only the click-driven browser extractor passes
+        # the behaviour gate. Skip the slower generic chain entirely.
+        from .browser_extractor import _host_is_sahid4u, capture_sahid4u_watch
+        if _host_is_sahid4u(embed_url) and '/watch/' in embed_url:
+            found = capture_sahid4u_watch(embed_url)
+            if not found:
+                # Behaviour gate is stochastic — single retry with fresh session.
+                found = capture_sahid4u_watch(embed_url)
+            if not found:
+                return None
+            video_url, _inner = found
+            low = video_url.lower()
+            ext = 'm3u8' if ('.m3u8' in low or 'urlset' in low
+                             or 'master.txt' in low) else 'mp4'
+            return ResolvedVideo(url=video_url, ext=ext)
+
+        # Skip yt-dlp for known JS-only hosts — go directly to fallback
         if self._is_js_only(embed_url):
             return self._fallback_resolve(embed_url, cookies=cookies, referer=referer)
 
@@ -168,17 +187,21 @@ class VideoResolver:
         if self._is_js_only(url):
             return self._browser_resolve(url, referer=referer, cookies=cookies, _depth=_depth)
 
-        # Try streamlink for streaming sites
+        # Try streamlink for streaming sites — but run it in a bounded thread
+        # so a stuck streamlink plugin cannot stall the whole resolution path.
         try:
             import streamlink
-            streams = streamlink.streams(url)
-            if streams:
-                best = streams.get('best') or streams.get('720p') or list(streams.values())[0]
-                return ResolvedVideo(url=best.url, ext='m3u8')
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                try:
+                    streams = pool.submit(streamlink.streams, url).result(timeout=20)
+                    if streams:
+                        best = streams.get('best') or streams.get('720p') or list(streams.values())[0]
+                        return ResolvedVideo(url=best.url, ext='m3u8')
+                except Exception as e:
+                    print(f"[VideoResolver] streamlink failed: {e}")
         except ImportError:
             pass
-        except Exception as e:
-            print(f"[VideoResolver] streamlink failed: {e}")
 
         # Generic HTML scraper fallback
         try:
@@ -214,7 +237,18 @@ class VideoResolver:
     def _browser_resolve(self, url: str, referer: str = None, cookies: list = None,
                          _depth: int = 0) -> Optional[ResolvedVideo]:
         try:
-            from .browser_extractor import resolve_embed_via_browser
+            from .browser_extractor import (
+                resolve_embed_via_browser, _host_is_sahid4u,
+                capture_sahid4u_watch,
+            )
+            if _host_is_sahid4u(url) and '/watch/' in url:
+                found = capture_sahid4u_watch(url)
+                if found:
+                    video_url, _inner_origin = found
+                    low = video_url.lower()
+                    ext = 'm3u8' if ('.m3u8' in low or 'urlset' in low
+                                     or 'master.txt' in low) else 'mp4'
+                    return ResolvedVideo(url=video_url, ext=ext)
             video_url = resolve_embed_via_browser(
                 url, referer=referer, cookies=cookies)
             if video_url:

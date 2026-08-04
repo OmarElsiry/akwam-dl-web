@@ -341,30 +341,15 @@ def get_content_servers(content_url):
     else:
         watch_url = _related_url(content_url, 'watch', slug)
 
-    # New flow: /watch/ page ships server keys + CSRF; each embed is only
-    # revealed via POST /secure-watch/issue with a session cookie.
+    # Try the legacy mock-friendly fetch first: rawServers JSON or a plain
+    # iframe on a pre-2026 page. Real pages 404 this path today, but keeping
+    # it cheap preserves the regression harness and any old-mirror traffic.
     try:
-        session, html = _session_with_watch_page(watch_url)
+        legacy_html = _fetch(watch_url, timeout=12)
     except Exception:
-        return []
+        legacy_html = ''
 
-    keys = _parse_server_key_names(html)
-    if keys:
-        servers = []
-        for idx, info in enumerate(keys):
-            player_url, _err = _issue_player_url(session, watch_url, html, info['key'])
-            if player_url:
-                servers.append({
-                    'name': info['name'],
-                    'url': player_url,
-                    'key': info['key'],
-                    'embed_url': player_url,
-                })
-        if servers:
-            return servers
-
-    # Legacy rawServers JSON
-    m = re.search(r'let\s+rawServers\s*=\s*(\[[\s\S]*?\])\s*;', html, re.IGNORECASE)
+    m = re.search(r'let\s+rawServers\s*=\s*(\[[\s\S]*?\])\s*;', legacy_html or '', re.IGNORECASE)
     if m:
         try:
             raw = json.loads(m.group(1))
@@ -376,11 +361,41 @@ def get_content_servers(content_url):
         except json.JSONDecodeError:
             pass
 
-    # iframe fallback
-    iframes = re.findall(r'<iframe[^>]+src=["\']([^"\']+)["\']', html, re.IGNORECASE)
-    if iframes:
-        return [{'name': 'Embed', 'url': iframes[0]}]
+    legacy_iframes = re.findall(r'<iframe[^>]+src=["\']([^"\']+)["\']', legacy_html or '', re.IGNORECASE)
+    if legacy_iframes:
+        return [{'name': 'Embed', 'url': legacy_iframes[0]}]
 
+    # New flow: /watch/ page ships server keys + CSRF; each embed is only
+    # revealed via POST /secure-watch/issue with a session cookie.
+    try:
+        session, html = _session_with_watch_page(watch_url)
+    except Exception:
+        html = ''
+
+    keys = _parse_server_key_names(html) if html else []
+    issued = []
+    for info in keys or []:
+        player_url, _err = _issue_player_url(session, watch_url, html, info['key'])
+        if player_url:
+            issued.append({
+                'name': info['name'],
+                'url': player_url,
+                'key': info['key'],
+                'embed_url': player_url,
+            })
+    if issued:
+        return issued
+
+    # POST-to-issue flow is TLS-fingerprint gated; curl_cffi gets 404s while
+    # real Chromium passes. Hand the UI the watch page so the player resolver
+    # drives a real browser click through /api/resolve-embed.
+    # ponytail: when issue POST works server-side again, delete this branch.
+    if keys:
+        return [{
+            'name': 'سيرفر المشاهدة (Sahid4u Play)',
+            'url': watch_url,
+            'embed_url': watch_url,
+        }]
     return []
 
 
